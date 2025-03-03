@@ -6,6 +6,9 @@
 #include "kernel/param.h"
 
 // xargs 
+// 关键点在于对xargv数组的处理和fork与exec的使用;
+// 以及对readline函数的实现用来读取一行
+
    /* xargs
     1.需要从标准输入中读取每一行，并将每一行作为一个参数添加至命令的char *argv[]
     2.使用fork与exec 来invoke 命令 
