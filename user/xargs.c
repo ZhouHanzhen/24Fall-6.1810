@@ -38,7 +38,7 @@ int main(int argc, char *argv[]){
     }
     // printf("in main\n");
 
-    // 先将xarv中已有参数复制到xargv中
+    // 先将argv中已有参数复制到xargv中
     for(i = 1; i < argc; i++){
         strcpy(xargv[i-1], argv[i]);
         // printf("%s\n", xargv[i-1]);
@@ -46,7 +46,8 @@ int main(int argc, char *argv[]){
     // printf("copy argv\n");
     xargv[argc] = 0; // 最后一个参数为0
 
-    // 从标准输入读取行,并将每一行添加至xargv中
+    // 从标准输入读取行,并将每一行附加至xargv中
+    // 每读取一行，fork一个子进程，执行命令
     while(Readline(xargv[argc - 1])){
         // fork and exec
         if(fork() == 0) {
