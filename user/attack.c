@@ -22,22 +22,13 @@ main(int argc, char *argv[])
   word[6] = '\0';
 
   char *end = sbrk(PGSIZE*32);
-  char *limit = end + PGSIZE*31;
   for(int i = 0; i < 31; i++) {
-    printf("%d ", i);
     memcpy(word, end+18, 6);
     if(strcmp(word, match) == 0) {
       write(2, end+32, 8);
       break;
     }
     end += PGSIZE;
-  }
-
-  if(end == limit) {
-    memcpy(word, end+18, 6);
-    if(strcmp(word, match) == 0) {
-      write(2, end+32, 8);
-    }
   }
 
   exit(0);
