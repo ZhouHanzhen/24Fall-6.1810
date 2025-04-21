@@ -16,7 +16,7 @@ main(int argc, char *argv[])
   // secret的地址则为end + 32
   // 将secret保存至字符数组中
   // 将secret写入fd 2
-  
+
   int flag = 0;
   char secret[8];
   
@@ -37,7 +37,8 @@ main(int argc, char *argv[])
     // memcpy(line, end+8, 23);
     // printf("%s\n", line);
     if(strcmp(word, match) == 0) {
-      flag = 1;
+      write(2, end+32, 8);
+      // flag = 1;
       break;
     }
     end += PGSIZE;
@@ -51,16 +52,19 @@ main(int argc, char *argv[])
     // printf("%s\n", line);
 
     if(strcmp(word, match) == 0) {
-      flag = 1;
+      write(2, end+32, 8);
+      // flag = 1;
     }
   }
   
+  /*
   if(flag == 1){
     memcpy(secret, end + 32, 8);
     write(2, secret, 8);
   }else{
     printf("cannot find secret\n");
   }
+  */
   
   exit(0);
 }
