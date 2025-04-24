@@ -132,6 +132,19 @@ found:
     return 0;
   }
 
+  #ifdef LAB_PGTBL
+  // Allocate a usyscall page and save the p->pid to p->usyscall->pid
+  if((p->usyscall = (struct usyscall *)kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  // 在分配一个进程结构时，每个进程的p->pid便已经分配好了，
+	// 因而p->usyscall->pid = p->pid便在此时就可以初始化，
+	// 于是在这里便实现了用户空间 (p->usyscall->pid)与内核空间 (p->pid)共享数据。
+  p->usyscall->pid = p->pid;
+  #endif
+
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
@@ -158,6 +171,13 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+
+  #ifdef LAB_PGTBL
+  if(p->usyscall)
+    kfree((void*)p->usyscall);
+  p->usyscall = 0;
+  #endif
+
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -172,7 +192,8 @@ freeproc(struct proc *p)
 }
 
 // Create a user page table for a given process, with no user memory,
-// but with trampoline and trapframe pages.
+// but with trampoline and trapframe pages. 
+// and with usycall page for lab pgtbl
 pagetable_t
 proc_pagetable(struct proc *p)
 {
@@ -202,6 +223,20 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+  #ifdef LAB_PGTBL
+  // map the usyscall page just below the trapframe page, for
+  // shared data between kernel and user space.
+  // mappages() 将用户进程中的虚拟地址USYSCALL与物理地址p->usyscall 匹配，并允许用户读取，从而实现
+  // 用户空间与内核空间之间的数据共享。
+  if(mappages(pagetable, USYSCALL, PGSIZE,
+              (uint64)(p->usyscall), PTE_R | PTE_U) < 0){
+    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+    uvmunmap(pagetable, TRAPFRAME, 1, 0);
+    uvmfree(pagetable, 0);
+    return 0;
+  }
+  #endif
+
   return pagetable;
 }
 
@@ -212,6 +247,11 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
+
+#ifdef LAB_PGTBL
+  uvmunmap(pagetable, USYSCALL, 1, 0);
+#endif
+
   uvmfree(pagetable, sz);
 }
 

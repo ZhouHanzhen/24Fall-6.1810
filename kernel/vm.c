@@ -491,6 +491,22 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 void
 vmprint(pagetable_t pagetable) {
   // your code here
+  // 前序遍历 pagetable
+  // 1. 打印当前页表的地址
+  // 2. 遍历当前页表的每个 PTE
+  //    1. 如果 PTE 是有效的，打印 VA 的值，打印 PTE 的值, 打印物理地址 PA = PTE2PA(pte) 
+  //      1. 如果 PTE 不是叶子节点，vmprint（PA) 递归遍历子页表
+  printf("page table %p\n", pagetable);
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if(pte & PTE_V) {
+      uint64 pa = PTE2PA(pte);
+      printf("pte %p pa %p\n",(uint64 *)pte, (uint64 *)pa);
+        if(!PTE_LEAF(pte)){
+          vmprint((pagetable_t)pa);
+        }
+    }
+  }
 }
 #endif
 
