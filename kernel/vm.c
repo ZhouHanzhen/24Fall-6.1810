@@ -488,7 +488,7 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 
 
 #ifdef LAB_PGTBL
-void levelvmprint(pagetable_t pagetable, uint64 va_parent, int level){
+void vmprintwalk(pagetable_t pagetable, uint64 va_parent, int level){
   // 前序遍历 pagetable
   // 1. 遍历当前页表的每个 PTE, 如果 PTE 是有效的
   //    1. 通过页表中 PTE 序号 i 与所在层级 level 计算 va, 通过 PTE2PA 计算 pa ;
@@ -496,7 +496,6 @@ void levelvmprint(pagetable_t pagetable, uint64 va_parent, int level){
   //    3. 打印 VA 的值，打印 PTE 的值, 打印物理地址 PA = PTE2PA(pte) ;
   //    4. 如果 PTE 不是叶子节点，levelvmprint() 递归遍历子页表;
   
-
   for(int i = 0; i < 512; i++) {
     pte_t pte = pagetable[i];
     if(pte & PTE_V) {
@@ -525,7 +524,7 @@ vmprint(pagetable_t pagetable) {
 
   uint64 va = 0;
   int level  = 1;
-  levelvmprint(pagetable, va, level);
+  vmprintwalk(pagetable, va, level);
 }
 #endif
 
