@@ -510,7 +510,7 @@ void vmprintwalk(pagetable_t pagetable, uint64 va_parent, int level){
       }
       printf("%p pte %p pa %p\n",(uint64 *)va, (uint64 *)pte, (uint64 *)pa);
       if(!PTE_LEAF(pte)){
-        levelvmprint((pagetable_t)pa, va, level + 1);
+        vmprintwalk((pagetable_t)pa, va, level + 1);
       }
     }
     
