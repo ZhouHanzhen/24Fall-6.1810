@@ -500,13 +500,13 @@ void levelvmprint(pagetable_t pagetable, uint64 va_parent, int level){
   for(int i = 0; i < 512; i++) {
     pte_t pte = pagetable[i];
     if(pte & PTE_V) {
-      uint64 va = va_parent + ((uint64)i << (PGSHIFT+9*(2 - level))); 
-      if(level == 0 && i >= 128) {
+      uint64 va = va_parent + ((uint64)i << (PGSHIFT+9*(3 - level))); 
+      if(level == 1 && i >= 128) {
         va += 0xffffffc000000000;
       }
 
       uint64 pa = PTE2PA(pte);
-      for(int j = 0; j < (level + 1); j++) {
+      for(int j = 0; j < level; j++) {
         printf(" ..");
       }
       printf("%p pte %p pa %p\n",(uint64 *)va, (uint64 *)pte, (uint64 *)pa);
@@ -524,7 +524,7 @@ vmprint(pagetable_t pagetable) {
   printf("page table %p\n", pagetable);
 
   uint64 va = 0;
-  int level  = 0;
+  int level  = 1;
   levelvmprint(pagetable, va, level);
 }
 #endif
