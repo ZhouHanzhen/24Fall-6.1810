@@ -21,6 +21,7 @@ extern char trampoline[]; // trampoline.S
 pagetable_t
 kvmmake(void)
 {
+  int flag = 1;
   pagetable_t kpgtbl;
 
   kpgtbl = (pagetable_t) kalloc();
@@ -46,8 +47,17 @@ kvmmake(void)
   // map kernel text executable and read-only.
   kvmmap(kpgtbl, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
 
+#ifdef LAB_PGTBL
+  flag = 0;
   // map kernel data and the physical RAM we'll make use of.
-  kvmmap(kpgtbl, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+  kvmmap(kpgtbl, (uint64)etext, (uint64)etext, SUPERPHYSTART-(uint64)etext, PTE_R | PTE_W);
+  superkvmmap(kpgtbl, SUPERPHYSTART, SUPERPHYSTART, PHYSTOP-SUPERPHYSTART, PTE_R | PTE_W);
+#endif
+  if(flag){
+    // 1 means no superpage
+    // map kernel data and the physical RAM we'll make use of.
+    kvmmap(kpgtbl, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+  } 
 
   // map the trampoline for trap entry/exit to
   // the highest virtual address in the kernel.
@@ -117,6 +127,28 @@ walk(pagetable_t pagetable, uint64 va, int alloc)
   return &pagetable[PX(0, va)];
 }
 
+#ifdef LAB_PGTBL
+pte_t *
+superwalk(pagetable_t pagetable, uint64 va, int alloc)
+{
+  if(va >= MAXVA)
+    panic("walk");
+
+  for(int level = 2; level > 1; level--) {
+    pte_t *pte = &pagetable[PX(level, va)];
+    if(*pte & PTE_V) {
+      pagetable = (pagetable_t)PTE2PA(*pte);
+    } else {
+      if(!alloc || (pagetable = (pde_t*)kalloc()) == 0)
+        return 0;
+      memset(pagetable, 0, PGSIZE);
+      *pte = PA2PTE(pagetable) | PTE_V;
+    }
+  }
+  return &pagetable[PX(1, va)];
+}
+#endif
+
 // Look up a virtual address, return the physical address,
 // or 0 if not mapped.
 // Can only be used to look up user pages.
@@ -150,6 +182,86 @@ kvmmap(pagetable_t kpgtbl, uint64 va, uint64 pa, uint64 sz, int perm)
   if(mappages(kpgtbl, va, sz, pa, perm) != 0)
     panic("kvmmap");
 }
+
+#ifdef LAB_PGTBL
+// add a mapping (for superpage) to the kernel page table.
+// only used when booting.
+// does not flush TLB or enable paging.
+void
+superkvmmap(pagetable_t kpgtbl, uint64 va, uint64 pa, uint64 sz, int perm)
+{
+  if(supermappages(kpgtbl, va, sz, pa, perm) != 0)
+    panic("superkvmmap");
+}
+
+// Create PTEs for virtual addresses starting at va that refer to
+// physical addresses starting at pa.
+// va and size MUST be superpage-aligned.
+// Returns 0 on success, -1 if walk() couldn't
+// allocate a needed page-table page.
+int
+supermappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
+{
+  uint64 a, last;
+  pte_t *pte;
+
+  if((va % SUPERPGSIZE) != 0)
+    panic("supermappages: va not aligned");
+
+  if((size % SUPERPGSIZE) != 0)
+    panic("supermappages: size not aligned");
+
+  if(size == 0)
+    panic("supermappages: size");
+  
+  a = va;
+  last = va + size - SUPERPGSIZE;
+  for(;;){
+    if((pte = superwalk(pagetable, a, 1)) == 0)  //superwalk(): find leaf pte by va 
+      return -1;
+    if(*pte & PTE_V)
+      panic("supermappages: remap");
+    *pte = PA2PTE(pa) | perm | PTE_V | PTE_S;   // set the pte with pa and permission bits
+    if(a == last)
+      break;
+    a += SUPERPGSIZE;
+    pa += SUPERPGSIZE;
+  }
+  return 0;
+}
+
+// Remove npages of mappings starting from va. va must be
+// superpage-aligned. The mappings must exist.
+// Optionally free the physical memory.
+void
+superuvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
+{
+  uint64 a;
+  pte_t *pte;
+  int sz;
+
+  if((va % SUPERPGSIZE) != 0)
+    panic("superuvmunmap: not aligned");
+
+  for(a = va; a < va + npages*SUPERPGSIZE; a += sz){
+    sz = SUPERPGSIZE;
+    if((pte = superwalk(pagetable, a, 0)) == 0)  //superwalk(): find leaf pte by va
+      panic("superuvmunmap: walk");
+    if((*pte & PTE_V) == 0) {
+      printf("va=%ld pte=%ld\n", a, *pte);
+      panic("superuvmunmap: not mapped");
+    }
+    if(PTE_FLAGS(*pte) == PTE_V)
+      panic("superuvmunmap: not a leaf");
+    if(do_free){
+      uint64 pa = PTE2PA(*pte);
+      superfree((void*)pa);
+    }
+    *pte = 0;
+  }
+}
+#endif
+
 
 // Create PTEs for virtual addresses starting at va that refer to
 // physical addresses starting at pa.
@@ -193,26 +305,61 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
-  uint64 a;
-  pte_t *pte;
+  uint64 a, prev_a;
+  pte_t *pte, *prev_pte;
   int sz;
+  int flag = 0;
 
   if((va % PGSIZE) != 0)
     panic("uvmunmap: not aligned");
 
   for(a = va; a < va + npages*PGSIZE; a += sz){
     sz = PGSIZE;
-    if((pte = walk(pagetable, a, 0)) == 0)
+    if((pte = walk(pagetable, a, 0)) == 0)  
       panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0) {
-      printf("va=%ld pte=%ld\n", a, *pte);
-      panic("uvmunmap: not mapped");
+    if((*pte & PTE_V) == 0) {               
+#ifdef LAB_PGTBL
+      flag = 1;  // 标志位flag 用于判断有无lab_pgtbl
+      // a 也许是有效普通页 page 与有效 superpage 之间的无效页间隔 gap 的地址
+      prev_a = a;
+      prev_pte = pte;
+      a = SUPERPGROUNDUP(a);
+      
+      if((pte = walk(pagetable, a, 0)) == 0){
+        panic("uvmunmap: walk");
+      }  
+      if((*pte & PTE_V) == 0){
+        // 若a 与 prev_a 相同， 则是 superpage 的 pte无效
+        printf("page: va=%ld pte=%ld\n", prev_a, *prev_pte);  // 普通页的pte：prev 未匹配
+        printf("super page: va=%ld pte=%ld\n", a, *pte);     // super页的pte：a 未匹配
+        panic("uvmunmap: not mapped");
+      }
+         
+#endif
+      if(!flag){ // 如果没有lab_pgtbl
+        printf("va=%ld pte=%ld\n", a, *pte);  
+        panic("uvmunmap: not mapped");
+      }
     }
+
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
+
+    // pte 有效时需要判断是superpage的pte还是普通page的pte;
+    //需要思考va在superpage与普通page之间交替变换时情况是什么样的
     if(do_free){
       uint64 pa = PTE2PA(*pte);
-      kfree((void*)pa);
+      if(*pte & PTE_S){
+#ifdef LAB_PGTBL
+        superfree((void*)pa);        
+        sz = SUPERPGSIZE;
+#endif
+        ;
+      }
+      else{
+        kfree((void*)pa);
+        // sz = PGSIZE;
+      }     
     }
     *pte = 0;
   }
@@ -280,6 +427,71 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
   return newsz;
 }
 
+#ifdef LAB_PGTBL
+// For superpage:
+// Allocate PTEs and physical memory to grow process from oldsz to
+// newsz, which need not be super page aligned.  Returns new size or 0 on error.
+uint64
+superuvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
+{
+  char *mem;
+  uint64 a;
+  int sz;
+  uint64 superstart;
+
+  if(newsz < oldsz)
+    return oldsz;
+
+  
+  // 在 PGROUNDUP(oldsz) 与 SUPERPGROUNDUP(oldsz) 之间还有空页没有分配内存
+  // 所以首先需要在这个间隔之间分配内存
+  superstart = SUPERPGROUNDUP(oldsz);
+  oldsz = uvmalloc(pagetable, oldsz, superstart, xperm);
+  if(oldsz == 0) {
+    return 0;
+  }
+
+  // 填补完page 与 superpage 之间的间隔后再开始分配 superpage
+  // oldsz = SUPERPGROUNDUP(oldsz);
+  for(a = oldsz; a < newsz; a += sz){
+    sz = SUPERPGSIZE;
+    mem = superalloc(); // superalloc(): allocate a super page
+    if(mem == 0){
+      superuvmdealloc(pagetable, a, oldsz);
+      return 0;
+    }
+#ifndef LAB_SYSCALL
+    memset(mem, 0, sz);
+#endif
+    if(supermappages(pagetable, a, sz, (uint64)mem, PTE_R|PTE_U|xperm) != 0){  // supermappages(): map a super page
+      superfree(mem); // superfree(): free a super page
+      superuvmdealloc(pagetable, a, oldsz);
+      return 0;
+    }
+  }
+  return SUPERPGROUNDUP(newsz);
+}
+
+// For superpage:
+// Deallocate user pages to bring the process size from oldsz to
+// newsz.  oldsz and newsz need not be page-aligned, nor does newsz
+// need to be less than oldsz.  oldsz can be larger than the actual
+// process size.  Returns the new process size.
+uint64
+superuvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
+{
+  if(newsz >= oldsz)
+    return oldsz;
+
+  if(SUPERPGROUNDUP(newsz) < SUPERPGROUNDUP(oldsz)){
+    int npages = (SUPERPGROUNDUP(oldsz) - SUPERPGROUNDUP(newsz)) / SUPERPGSIZE;
+    superuvmunmap(pagetable, SUPERPGROUNDUP(newsz), npages, 1); // superuvmunmap(): unmap a super page
+  }
+
+  return newsz;
+}
+#endif
+
 // Deallocate user pages to bring the process size from oldsz to
 // newsz.  oldsz and newsz need not be page-aligned, nor does newsz
 // need to be less than oldsz.  oldsz can be larger than the actual
@@ -342,22 +554,55 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   uint flags;
   char *mem;
   int szinc;
+  int flag = 0;
 
   for(i = 0; i < sz; i += szinc){
     szinc = PGSIZE;
     szinc = PGSIZE;
-    if((pte = walk(old, i, 0)) == 0)
+    if((pte = walk(old, i, 0)) == 0)  
       panic("uvmcopy: pte should exist");
-    if((*pte & PTE_V) == 0)
-      panic("uvmcopy: page not present");
+    if((*pte & PTE_V) == 0) {
+      // i 也许是有效普通页 page 与有效 superpage 之间的无效页间隔 gap 的地址
+      // 所以 *pte 才无效
+#ifdef LAB_PGTBL
+      flag = 1;
+      i = SUPERPGROUNDUP(i);
+      if((pte = walk(old, i, 0)) == 0)  
+        panic("uvmcopy: pte should exist");
+      if((*pte & PTE_V) == 0){
+        panic("uvmcopy: page and superpage not present");
+      }
+#endif
+      if(!flag) {
+        panic("uvmcopy: page not present");
+      }
+    }
+    
+    // pte 有效
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
-      goto err;
+
+    if(*pte & PTE_S) { // superpage
+#ifdef LAB_PGTBL
+      if((mem = superalloc()) == 0)
+        goto err;
+      memmove(mem, (char*)pa, SUPERPGSIZE);
+      if(supermappages(new, i, SUPERPGSIZE, (uint64)mem, flags) != 0){
+        superfree(mem);
+        goto err;
+      }
+      szinc = SUPERPGSIZE;
+#endif
+      ;
+    }else{  // normal page
+      if((mem = kalloc()) == 0)
+        goto err;
+      memmove(mem, (char*)pa, PGSIZE);
+      if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+        kfree(mem);
+        goto err;
+      }
+      // szinc = PGSIZE;
     }
   }
   return 0;

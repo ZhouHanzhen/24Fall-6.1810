@@ -11,6 +11,10 @@
 
 void freerange(void *pa_start, void *pa_end);
 
+#ifdef LAB_PGTBL
+void superfreerange(void *pa_start, void *pa_end);
+#endif
+
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
@@ -21,13 +25,27 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
+
+#ifdef LAB_PGTBL
+  struct run *superfreelist;
+#endif
 } kmem;
 
 void
 kinit()
 {
+  int flag = 1;
   initlock(&kmem.lock, "kmem");
-  freerange(end, (void*)PHYSTOP);
+
+#ifdef LAB_PGTBL
+  flag = 0;
+  freerange(end, (void*)SUPERPHYSTART);
+  superfreerange((void*)SUPERPHYSTART, (void*)PHYSTOP);
+#endif
+
+  if(flag){ // 1 means no superpage
+    freerange(end, (void*)PHYSTOP);
+  }
 }
 
 void
@@ -39,6 +57,17 @@ freerange(void *pa_start, void *pa_end)
     kfree(p);
 }
 
+#ifdef LAB_PGTBL
+void
+superfreerange(void *pa_start, void *pa_end)
+{
+  char *p;
+  p = (char*)SUPERPGROUNDUP((uint64)pa_start);
+  for(; p + SUPERPGSIZE <= (char*)pa_end; p += SUPERPGSIZE)
+    superfree(p);
+}
+#endif
+
 // Free the page of physical memory pointed at by pa,
 // which normally should have been returned by a
 // call to kalloc().  (The exception is when
@@ -48,9 +77,19 @@ kfree(void *pa)
 {
   struct run *r;
 
-  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+  int flag = 1;
+  
+#ifdef LAB_PGTBL
+  flag = 0;
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= SUPERPHYSTART)
     panic("kfree");
+#endif
 
+  if(flag){ // 1 means no superpage
+    if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+      panic("kfree");
+  }
+  
   // Fill with junk to catch dangling refs.
   memset(pa, 1, PGSIZE);
 
@@ -61,6 +100,51 @@ kfree(void *pa)
   kmem.freelist = r;
   release(&kmem.lock);
 }
+
+#ifdef LAB_PGTBL
+// Free the superpage of physical memory pointed at by pa,
+// which normally should have been returned by a
+// call to superalloc().  (The exception is when
+// initializing the allocator; see kinit above.)
+void
+superfree(void *pa)
+{
+  struct run *r;
+
+  if(((uint64)pa % SUPERPGSIZE) != 0 || (uint64)pa < SUPERPHYSTART || (uint64)pa >= PHYSTOP)
+    panic("superfree");
+
+  // Fill with junk to catch dangling refs.
+  memset(pa, 1, SUPERPGSIZE);
+
+  r = (struct run*)pa;
+
+  acquire(&kmem.lock);
+  r->next = kmem.superfreelist;
+  kmem.superfreelist = r;
+  release(&kmem.lock);
+}
+
+// Allocate one 2M-byte page of physical memory.
+// Returns a pointer that the kernel can use.
+// Returns 0 if the memory cannot be allocated.
+void *
+superalloc(void)
+{
+  struct run *r;
+
+  acquire(&kmem.lock);
+  r = kmem.superfreelist;
+  if(r)
+    kmem.superfreelist = r->next;
+  release(&kmem.lock);
+
+  if(r)
+    memset((char*)r, 5, SUPERPGSIZE); // fill with junk
+  return (void*)r;
+}
+
+#endif
 
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.

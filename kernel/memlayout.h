@@ -43,6 +43,14 @@
 #define KERNBASE 0x80000000L
 #define PHYSTOP (KERNBASE + 128*1024*1024)
 
+#ifdef LAB_PGTBL
+// for superpage:
+// the page area: from KERNBASE to SUPERPHYSTART
+// the superpage area: from SUPERPHYSTART to PHYSTOP
+// the size of the superpage area is 16 times the size of SUPERPGSIZE
+#define SUPERPHYSTART (PHYSTOP - 16*SUPERPGSIZE)
+#endif
+
 // map the trampoline page to the highest address,
 // in both user and kernel space.
 #define TRAMPOLINE (MAXVA - PGSIZE)

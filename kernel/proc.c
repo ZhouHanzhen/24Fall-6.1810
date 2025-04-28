@@ -303,6 +303,29 @@ growproc(int n)
   struct proc *p = myproc();
 
   sz = p->sz;
+
+  int flag = 0;
+#ifdef LAB_PGTBL
+// superpage 暂时只考虑 >=SUPERPGSIZE 的情况，不考虑小于0的情况。
+  if(n >= SUPERPGSIZE){
+    // sbrk too much，n 超过大页内存，
+    // 则先用uvmalloc() 分配 n - (16*SUPERPGSIZE - SUPERPGROUNDUP(sz));
+    // 再用superuvmalloc() 分配(16*SUPERPGSIZE - SUPERPGROUNDUP(sz))；
+    if(n > 16*SUPERPGSIZE){ 
+      n = 16*SUPERPGSIZE - SUPERPGROUNDUP(sz);
+    }
+    if((sz = superuvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
+      return -1;
+    }
+    flag = 1;
+  }
+
+  if(flag) {
+    p->sz = sz;
+    return 0; // 已经分配了superpage, 不需要再运行后面的代码
+  }
+#endif
+
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
       return -1;

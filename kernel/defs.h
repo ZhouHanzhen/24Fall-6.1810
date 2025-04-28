@@ -67,6 +67,10 @@ void            ramdiskrw(struct buf*);
 void*           kalloc(void);
 void            kfree(void *);
 void            kinit(void);
+#ifdef LAB_PGTBL
+void            superfree(void *);
+void*           superalloc(void);
+#endif
 
 // log.c
 void            initlog(int, struct superblock*);
@@ -187,6 +191,12 @@ void            vmprintwalk(pagetable_t, uint64, int);
 #endif
 #ifdef LAB_PGTBL
 pte_t*          pgpte(pagetable_t, uint64);
+uint64          superuvmalloc(pagetable_t, uint64, uint64, int);
+uint64          superuvmdealloc(pagetable_t, uint64, uint64);
+void            superkvmmap(pagetable_t, uint64, uint64, uint64, int);
+int             supermappages(pagetable_t, uint64, uint64, uint64, int);
+void            superuvmunmap(pagetable_t, uint64, uint64, int);
+pte_t *         superwalk(pagetable_t, uint64, int);
 #endif
 
 // plic.c
