@@ -447,7 +447,7 @@ superuvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
   // 所以首先需要在这个间隔之间分配内存
   superstart = SUPERPGROUNDUP(oldsz);
   oldsz = uvmalloc(pagetable, oldsz, superstart, xperm);
-  if(oldsz == 0) {
+  if(oldsz == 0) {  // 间隔分配失败
     return 0;
   }
 

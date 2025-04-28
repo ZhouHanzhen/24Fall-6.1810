@@ -301,22 +301,35 @@ growproc(int n)
 {
   uint64 sz;
   struct proc *p = myproc();
+  uint64 sparesupern;
 
   sz = p->sz;
 
   int flag = 0;
 #ifdef LAB_PGTBL
 // superpage 暂时只考虑 >=SUPERPGSIZE 的情况，不考虑小于0的情况。
-  if(n >= SUPERPGSIZE){
-    // sbrk too much，n 超过大页内存，
-    // 则先用uvmalloc() 分配 n - (16*SUPERPGSIZE - SUPERPGROUNDUP(sz));
-    // 再用superuvmalloc() 分配(16*SUPERPGSIZE - SUPERPGROUNDUP(sz))；
-    if(n > 16*SUPERPGSIZE){ 
-      n = 16*SUPERPGSIZE - SUPERPGROUNDUP(sz);
+  if(n >= SUPERPGSIZE){ // 还可以优化，先在page 与 superpage 之间的间隔分配小页， 再分配大页， 再分配小页；这样大页与小页之间的内存不会被多分配
+    sparesupern = 16*SUPERPGSIZE - (SUPERPGROUNDUP(sz) - SUPERPGSIZE); // 剩余的大页内存
+    // sbrk too much，如果 n 超过剩余的大页内存，
+    // 则先用superuvmalloc() 分配完剩余的大页内存 (16*SUPERPGSIZE - (SUPERPGROUNDUP(sz) - SUPERPGSIZE))；
+    // 再用uvmalloc() 分配还需的普通页内存 n - ((16*SUPERPGSIZE - (SUPERPGROUNDUP(sz) - SUPERPGSIZE)));
+    
+    if(n > sparesupern){ // 大页内存不够
+      // 先分配完剩余的大页内存
+      if((sz = superuvmalloc(p->pagetable, sz, sz + sparesupern, PTE_W)) == 0) {
+        return -1;
+      }
+      // 再分配还需要的普通页内存
+      if((sz = uvmalloc(p->pagetable, sz, sz + (n - sparesupern), PTE_W)) == 0) {
+        return -1;
+      }
+      
+    }else{  // 大页内存足够
+      if((sz = superuvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
+        return -1;
+      }
     }
-    if((sz = superuvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
-      return -1;
-    }
+    
     flag = 1;
   }
 
