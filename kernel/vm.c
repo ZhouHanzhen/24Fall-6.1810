@@ -416,40 +416,24 @@ superuvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
   char *mem;
   uint64 a;
   int sz;
-  uint64 superstart, oldstart;
 
   if(newsz < oldsz)
     return oldsz;
 
-  
-  // 在 PGROUNDUP(oldsz) 与 SUPERPGROUNDUP(oldsz) 之间还有空页没有分配内存
-  // 所以首先需要在这个间隔之间分配内存
-  oldstart = oldsz;
-  superstart = SUPERPGROUNDUP(oldsz);
-  oldsz = uvmalloc(pagetable, oldstart, superstart, xperm);
-  if(oldsz == 0) {  // 间隔分配失败
-    return 0;
-  }
-
-  // 填补完page 与 superpage 之间的间隔后再开始分配 superpage
-  // oldsz = SUPERPGROUNDUP(oldsz);
+  oldsz = SUPERPGROUNDUP(oldsz);
   for(a = oldsz; a < newsz; a += sz){
     sz = SUPERPGSIZE;
-    mem = superalloc(); // superalloc(): allocate a super page
+    mem = superalloc(); 
     if(mem == 0){
-      // 这里需要考虑在分配superpage之前，已经分配了普通页的情况
-      // 释放完superpage后还需要释放掉已经分配的普通页
       superuvmdealloc(pagetable, a, oldsz);
-      uvmdealloc(pagetable, superstart, oldstart);
       return 0;
     }
 #ifndef LAB_SYSCALL
     memset(mem, 0, sz);
 #endif
-    if(supermappages(pagetable, a, sz, (uint64)mem, PTE_R|PTE_U|xperm) != 0){  // supermappages(): map a super page
-      superfree(mem); // superfree(): free a super page
+    if(supermappages(pagetable, a, sz, (uint64)mem, PTE_R|PTE_U|xperm) != 0){  
+      superfree(mem); 
       superuvmdealloc(pagetable, a, oldsz);
-      uvmdealloc(pagetable, superstart, oldstart);
       return 0;
     }
   }
@@ -469,7 +453,7 @@ superuvmdealloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz)
 
   if(SUPERPGROUNDUP(newsz) < SUPERPGROUNDUP(oldsz)){
     int npages = (SUPERPGROUNDUP(oldsz) - SUPERPGROUNDUP(newsz)) / SUPERPGSIZE;
-    superuvmunmap(pagetable, SUPERPGROUNDUP(newsz), npages, 1); // superuvmunmap(): unmap a super page
+    superuvmunmap(pagetable, SUPERPGROUNDUP(newsz), npages, 1); 
   }
 
   return newsz;
