@@ -305,10 +305,9 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
 void
 uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
 {
-  uint64 a, prev_a;
-  pte_t *pte, *prev_pte;
+  uint64 a;
+  pte_t *pte;
   int sz;
-  int flag = 0;
 
   if((va % PGSIZE) != 0)
     panic("uvmunmap: not aligned");
@@ -318,28 +317,8 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
     if((pte = walk(pagetable, a, 0)) == 0)  
       panic("uvmunmap: walk");
     if((*pte & PTE_V) == 0) {               
-#ifdef LAB_PGTBL
-      flag = 1;  // 标志位flag 用于判断有无lab_pgtbl
-      // a 也许是有效普通页 page 与有效 superpage 之间的无效页间隔 gap 的地址
-      prev_a = a;
-      prev_pte = pte;
-      a = SUPERPGROUNDUP(a);
-      
-      if((pte = walk(pagetable, a, 0)) == 0){
-        panic("uvmunmap: walk");
-      }  
-      if((*pte & PTE_V) == 0){
-        // 若a 与 prev_a 相同， 则是 superpage 的 pte无效
-        printf("page: va=%ld pte=%ld\n", prev_a, *prev_pte);  // 普通页的pte：prev 未匹配
-        printf("super page: va=%ld pte=%ld\n", a, *pte);     // super页的pte：a 未匹配
-        panic("uvmunmap: not mapped");
-      }
-         
-#endif
-      if(!flag){ // 如果没有lab_pgtbl
         printf("va=%ld pte=%ld\n", a, *pte);  
         panic("uvmunmap: not mapped");
-      }
     }
 
     if(PTE_FLAGS(*pte) == PTE_V)
@@ -437,7 +416,7 @@ superuvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
   char *mem;
   uint64 a;
   int sz;
-  uint64 superstart;
+  uint64 superstart, oldstart;
 
   if(newsz < oldsz)
     return oldsz;
@@ -445,8 +424,9 @@ superuvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
   
   // 在 PGROUNDUP(oldsz) 与 SUPERPGROUNDUP(oldsz) 之间还有空页没有分配内存
   // 所以首先需要在这个间隔之间分配内存
+  oldstart = oldsz;
   superstart = SUPERPGROUNDUP(oldsz);
-  oldsz = uvmalloc(pagetable, oldsz, superstart, xperm);
+  oldsz = uvmalloc(pagetable, oldstart, superstart, xperm);
   if(oldsz == 0) {  // 间隔分配失败
     return 0;
   }
@@ -457,7 +437,10 @@ superuvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
     sz = SUPERPGSIZE;
     mem = superalloc(); // superalloc(): allocate a super page
     if(mem == 0){
+      // 这里需要考虑在分配superpage之前，已经分配了普通页的情况
+      // 释放完superpage后还需要释放掉已经分配的普通页
       superuvmdealloc(pagetable, a, oldsz);
+      uvmdealloc(pagetable, superstart, oldstart);
       return 0;
     }
 #ifndef LAB_SYSCALL
@@ -466,6 +449,7 @@ superuvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
     if(supermappages(pagetable, a, sz, (uint64)mem, PTE_R|PTE_U|xperm) != 0){  // supermappages(): map a super page
       superfree(mem); // superfree(): free a super page
       superuvmdealloc(pagetable, a, oldsz);
+      uvmdealloc(pagetable, superstart, oldstart);
       return 0;
     }
   }
@@ -554,7 +538,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   uint flags;
   char *mem;
   int szinc;
-  int flag = 0;
 
   for(i = 0; i < sz; i += szinc){
     szinc = PGSIZE;
@@ -562,23 +545,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((pte = walk(old, i, 0)) == 0)  
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0) {
-      // i 也许是有效普通页 page 与有效 superpage 之间的无效页间隔 gap 的地址
-      // 所以 *pte 才无效
-#ifdef LAB_PGTBL
-      flag = 1;
-      i = SUPERPGROUNDUP(i);
-      if((pte = walk(old, i, 0)) == 0)  
-        panic("uvmcopy: pte should exist");
-      if((*pte & PTE_V) == 0){
-        panic("uvmcopy: page and superpage not present");
-      }
-#endif
-      if(!flag) {
         panic("uvmcopy: page not present");
-      }
     }
     
-    // pte 有效
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
 

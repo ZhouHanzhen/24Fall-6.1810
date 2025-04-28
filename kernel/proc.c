@@ -301,31 +301,54 @@ growproc(int n)
 {
   uint64 sz;
   struct proc *p = myproc();
-  uint64 sparesupern;
+  uint64 sparesupern, superstart, supern, gap, oldsz;
 
   sz = p->sz;
+  oldsz = sz;
+  
 
   int flag = 0;
 #ifdef LAB_PGTBL
 // superpage 暂时只考虑 >=SUPERPGSIZE 的情况，不考虑小于0的情况。
-  if(n >= SUPERPGSIZE){ // 还可以优化，先在page 与 superpage 之间的间隔分配小页， 再分配大页， 再分配小页；这样大页与小页之间的内存不会被多分配
-    sparesupern = 16*SUPERPGSIZE - (SUPERPGROUNDUP(sz) - SUPERPGSIZE); // 剩余的大页内存
-    // sbrk too much，如果 n 超过剩余的大页内存，
-    // 则先用superuvmalloc() 分配完剩余的大页内存 (16*SUPERPGSIZE - (SUPERPGROUNDUP(sz) - SUPERPGSIZE))；
-    // 再用uvmalloc() 分配还需的普通页内存 n - ((16*SUPERPGSIZE - (SUPERPGROUNDUP(sz) - SUPERPGSIZE)));
+  if(n >= SUPERPGSIZE){ 
     
+    superstart = SUPERPGROUNDUP(sz);
+    gap = superstart - oldsz; // 大页与小页之间的间隔
+    supern = SUPERPGROUNDDOWN(n - gap);  // 需要分配的大页内存
+    sparesupern = 16*SUPERPGSIZE - (superstart - 1*SUPERPGSIZE); // 剩余的大页内存
+
+    // sbrk too much，如果 n 超过剩余的大页内存，
     if(n > sparesupern){ // 大页内存不够
-      // 先分配完剩余的大页内存
-      if((sz = superuvmalloc(p->pagetable, sz, sz + sparesupern, PTE_W)) == 0) {
+      // 先分配首部普通页与大页之间的间隔页
+      if((sz = uvmalloc(p->pagetable, sz, sz + gap, PTE_W)) == 0) { // gap = superstart - oldsz
         return -1;
       }
-      // 再分配还需要的普通页内存
-      if((sz = uvmalloc(p->pagetable, sz, sz + (n - sparesupern), PTE_W)) == 0) {
+      // 再分配完中部剩余的大页内存
+      if((sz = superuvmalloc(p->pagetable, sz, sz + sparesupern, PTE_W)) == 0) {
+        uvmdealloc(p->pagetable, superstart, oldsz);
+        return -1;
+      }
+      // 再继续分配还需要的尾部的小页内存
+      if((sz = uvmalloc(p->pagetable, sz, sz + (n - gap - sparesupern), PTE_W)) == 0) {
+        superuvmdealloc(p->pagetable, superstart + sparesupern, superstart);
+        uvmdealloc(p->pagetable, superstart, oldsz);
         return -1;
       }
       
     }else{  // 大页内存足够
-      if((sz = superuvmalloc(p->pagetable, sz, sz + n, PTE_W)) == 0) {
+      // 先分配首部普通页与大页之间的间隔页
+      if((sz = uvmalloc(p->pagetable, sz, sz + gap, PTE_W)) == 0) { // gap = superstart - oldsz
+        return -1;
+      }
+      // 再分配中部需要的大页内存
+      if((sz = superuvmalloc(p->pagetable, sz, sz + supern, PTE_W)) == 0) { // supern = SUPERPGROUNDDOWN(n - gap); 
+        uvmdealloc(p->pagetable, superstart, oldsz);
+        return -1;
+      }
+      // 再继续分配尾部的小页内存
+      if((sz = uvmalloc(p->pagetable, sz, sz + (n - gap - supern), PTE_W)) == 0) { // n - supern - gap
+        superuvmdealloc(p->pagetable, superstart + supern, superstart);
+        uvmdealloc(p->pagetable, superstart, oldsz);
         return -1;
       }
     }
