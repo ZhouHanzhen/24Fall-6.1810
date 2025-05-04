@@ -1,0 +1,4 @@
+1.Which other xv6 system call(s) could be made faster using this shared page? Explain how.
+
+The "int dup(int fd)" system call could be made faster using this shared page.
+File descriptors could be stored in this shared page. When user process duplicates a file descriptor,it could find the descriptor from the share page.
