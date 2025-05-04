@@ -1,0 +1,47 @@
+**answers-traps.txt**
+`Which registers contain arguments to functions? For example, which register holds 13 in main's call to printf?`
+Registers a0-7.  a2 holds 13 in main's call to printf.
+
+`Where is the call to function f in the assembly code for main? Where is the call to g? (Hint: the compiler may inline functions.)`
+In the assembly code for main:
+`26:	45b1                	li	a1,12`
+0x26 is where the calls to function f and g are, they are inlined.
+
+`At what address is the function printf located?`
+In the assembly code for main:
+`30:	68c000ef          	jal	6bc <printf>`
+0x6bc is where the function printf located.
+
+`What value is in the register ra just after the jalr to printf in main?`
+In the assembly code for main:
+```
+  30:	68c000ef          	jal	6bc <printf>
+  exit(0);
+  34:	4501                	li	a0,0
+```
+0x34 is the value in the register ra just after the jalr to printf in main because that is  where printf should return back, the next instruction after the call to printf.
+
+```
+Run the following code.
+
+	unsigned int i = 0x00646c72;
+	printf("H%x Wo%s", 57616, (char *) &i);
+      
+
+What is the output? [Here's an ASCII table](https://www.asciitable.com/) that maps bytes to characters.
+
+The output depends on that fact that the RISC-V is little-endian. If the RISC-V were instead big-endian what would you set `i` to in order to yield the same output? Would you need to change `57616` to a different value?
+```
+The output:
+`HE110 World`
+(Hint: 57616: 0xE110; 0x72: r, 0x6c: l, 0x64: d.)
+
+If the RISC-V were instead big-endian，i should be set to 0x726c6400.
+And I wouldn't need to change 57616 to a different value because it has nothing to do with the endian.
+
+```
+In the following code, what is going to be printed after `'y='`? (note: the answer is not a specific value.) Why does this happen?
+
+	printf("x=%d y=%d", 3);
+```
+The value in register a2 is going to be printed after 'y='. Because a2 is the argument register which holds the second argument for printf function.
