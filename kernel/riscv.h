@@ -392,14 +392,7 @@ typedef uint64 *pagetable_t; // 512 PTEs
 
 #define PTE_FLAGS(pte) ((pte) & 0x3FF)
 
-#ifdef LAB_PGTBL
-// shift a physical address to the right place for a PTE.
-#define SUPERPA2PTE(pa) ((((uint64)pa) >> 12) << 10)
 
-#define SUPERPTE2PA(pte) (((pte) >> 10) << 12)
-
-#define SUPERPTE_FLAGS(pte) ((pte) & 0x3FF)
-#endif
 
 // extract the three 9-bit page table indices from a virtual address.
 #define PXMASK          0x1FF // 9 bits
