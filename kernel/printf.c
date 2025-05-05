@@ -168,6 +168,7 @@ panic(char *s)
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;
+  backtrace();
 }
 
 void
@@ -175,4 +176,25 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+
+void 
+backtrace(void)
+{
+  uint64 s0, ra, sp, boundary;
+
+  printf("backtrace:\n");
+
+  s0 = r_fp();
+  boundary = PGROUNDDOWN(s0);
+  ra = *(uint64*)(s0 - 8);
+  sp = *(uint64*)(s0 - 16);
+  printf("%p\n", (uint64*)ra);
+
+  while(PGROUNDDOWN(sp) == boundary) {
+    ra = *(uint64 *)(sp - 8);
+    sp = *(uint64 *)(sp - 16);
+    printf("%p\n", (uint64*)ra);
+  }
+  
 }
