@@ -94,3 +94,30 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+
+uint64 
+sys_sigalarm(void)
+{
+  int interval;
+  uint64 handler;
+
+  argint(0, &interval);  // the alarm interval 
+  argaddr(1, &handler);  // handler: the pointer to the handler function
+
+  struct proc *p = myproc();
+  p->interval = interval;
+  p->handler = handler;
+
+  // how to run handler
+
+  return 0; 
+}
+
+uint64 sys_sigreturn(void)
+{
+  struct proc *p = myproc();
+  p->trapframe->epc = p->handlerret;
+  
+  return 0;
+}

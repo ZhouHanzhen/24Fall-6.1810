@@ -77,9 +77,24 @@ usertrap(void)
     exit(-1);
 
   // give up the CPU if this is a timer interrupt.
-  if(which_dev == 2)
-    yield();
+  if(which_dev == 2){
+    // update the cticks of alarm handler
+    if(p->interval != 0){ 
+      p->cticks += 1;
+      if(p->cticks ==  p->interval){
+        // p->handler;
+        p->handlerret = p->trapframe->epc;
+        p->trapframe->epc = p->handler;
+        p->cticks = 0; // reset cticks
+      }
+    }else{ // p->interval == 0
+      p->cticks = 0; // If an application calls sigalarm(0, 0), the kernel should stop generating periodic alarm calls
 
+    }
+    
+    yield();
+  }
+    
   usertrapret();
 }
 
