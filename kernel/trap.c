@@ -29,6 +29,46 @@ trapinithart(void)
   w_stvec((uint64)kernelvec);
 }
 
+
+//
+void
+procregsave(struct proc *p){
+  // in uservec.S, saved the user registers in TRAPFRAME
+  // so copy them to the proc structure for later restore
+  p->ra = p->trapframe->ra;
+  p->sp = p->trapframe->sp;
+  p->gp = p->trapframe->gp;
+  p->tp = p->trapframe->tp;
+  p->t0 = p->trapframe->t0;
+  p->t1 = p->trapframe->t1;
+  p->t2 = p->trapframe->t2;
+  p->s0 = p->trapframe->s0;
+  p->s1 = p->trapframe->s1;
+  p->a1 = p->trapframe->a1;
+  p->a2 = p->trapframe->a2;
+  p->a3 = p->trapframe->a3;
+  p->a4 = p->trapframe->a4;
+  p->a5 = p->trapframe->a5;
+  p->a6 = p->trapframe->a6;
+  p->a7 = p->trapframe->a7;
+  p->s2 = p->trapframe->s2;
+  p->s3 = p->trapframe->s3;
+  p->s4 = p->trapframe->s4;
+  p->s5 = p->trapframe->s5;
+  p->s6 = p->trapframe->s6;
+  p->s7 = p->trapframe->s7;
+  p->s8 = p->trapframe->s8;
+  p->s9 = p->trapframe->s9;
+  p->s10 = p->trapframe->s10;
+  p->s11 = p->trapframe->s11;
+  p->t3 = p->trapframe->t3;
+  p->t4 = p->trapframe->t4;
+  p->t5 = p->trapframe->t5;
+  p->t6 = p->trapframe->t6;
+  p->a0 = p->trapframe->a0;
+}
+
+
 //
 // handle an interrupt, exception, or system call from user space.
 // called from trampoline.S
@@ -81,11 +121,15 @@ usertrap(void)
     // update the cticks of alarm handler
     if(p->interval != 0){ 
       p->cticks += 1;
-      if(p->cticks ==  p->interval){
+      if((p->cticks ==  p->interval) && (p->handlerflag == 0)){ // handler has returned
+        p->handlerflag = 1;
         // p->handler;
+        procregsave(p);
         p->handlerret = p->trapframe->epc;
-        p->trapframe->epc = p->handler;
+        p->status = r_sstatus();
+        p->trapframe->epc = p->handler; // change to handler 
         p->cticks = 0; // reset cticks
+        p->sigretflag = 0; // reset sigretflag
       }
     }else{ // p->interval == 0
       p->cticks = 0; // If an application calls sigalarm(0, 0), the kernel should stop generating periodic alarm calls
@@ -94,7 +138,12 @@ usertrap(void)
     
     yield();
   }
-    
+  
+  if(p->sigretflag){ // sigreturn is called
+    p->trapframe->a0 = p->a0;
+    p->sigretflag = 0; // reset sigretflag
+  }
+  
   usertrapret();
 }
 
@@ -127,6 +176,10 @@ usertrapret(void)
   
   // set S Previous Privilege mode to User.
   unsigned long x = r_sstatus();
+  // restore user program's r_sstatus()
+  if(p->sigretflag){
+    x = p->status;
+  }
   x &= ~SSTATUS_SPP; // clear SPP to 0 for user mode
   x |= SSTATUS_SPIE; // enable interrupts in user mode
   w_sstatus(x);

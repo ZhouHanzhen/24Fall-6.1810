@@ -102,6 +102,40 @@ allocpid()
   return pid;
 }
 
+void procregsinit(struct proc *p) {
+  p->ra = 0;
+  p->sp = 0;
+  p->gp = 0;
+  p->tp = 0;
+  p->t0 = 0;
+  p->t1 = 0;
+  p->t2 = 0;
+  p->s0 = 0;
+  p->s1 = 0;
+  p->a1 = 0;
+  p->a2 = 0;
+  p->a3 = 0;
+  p->a4 = 0;
+  p->a5 = 0;
+  p->a6 = 0;
+  p->a7 = 0;
+  p->s2 = 0;
+  p->s3 = 0;
+  p->s4 = 0;
+  p->s5 = 0;
+  p->s6 = 0;
+  p->s7 = 0;
+  p->s8 = 0;
+  p->s9 = 0;
+  p->s10 = 0;
+  p->s11 = 0;
+  p->t3 = 0;
+  p->t4 = 0;
+  p->t5 = 0;
+  p->t6 = 0;
+  p->a0 = 0;
+}
+
 // Look in the process table for an UNUSED proc.
 // If found, initialize state required to run in the kernel,
 // and return with p->lock held.
@@ -130,6 +164,10 @@ found:
   p->handler = 0;
   p->cticks = 0;
   p->handlerret = 0;
+  p->sigretflag = 0;
+  p->handlerflag = 0;
+  procregsinit(p);
+  p->status = 0;
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
