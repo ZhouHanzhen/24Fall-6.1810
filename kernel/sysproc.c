@@ -158,6 +158,5 @@ uint64 sys_sigreturn(void)
   p->trapframe->epc = p->handlerret;  // back to the user program's epc
   procregretore(p);
   
-
   return 0;
 }

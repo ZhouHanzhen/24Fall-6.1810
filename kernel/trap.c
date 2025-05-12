@@ -118,22 +118,19 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2){
-    // update the cticks of alarm handler
     if(p->interval != 0){ 
-      p->cticks += 1;
-      if((p->cticks ==  p->interval) && (p->handlerflag == 0)){ // handler has returned
-        p->handlerflag = 1;
-        // p->handler;
-        procregsave(p);
-        p->handlerret = p->trapframe->epc;
-        p->status = r_sstatus();
-        p->trapframe->epc = p->handler; // change to handler 
-        p->cticks = 0; // reset cticks
-        p->sigretflag = 0; // reset sigretflag
+      p->cticks += 1;  // update the cticks of alarm handler
+      //  a timer outstanding and the handler is not called
+      if((p->cticks ==  p->interval) && (p->handlerflag == 0)){ 
+        p->handlerflag = 1;                 //handler is about to be called
+        procregsave(p);                     // save user registers
+        p->handlerret = p->trapframe->epc;  // save the return address
+        p->status = r_sstatus();            // save the user status
+        p->trapframe->epc = p->handler;     // change the return address to handler 
+        p->cticks = 0;                      // reset cticks
       }
-    }else{ // p->interval == 0
-      p->cticks = 0; // If an application calls sigalarm(0, 0), the kernel should stop generating periodic alarm calls
-
+    }else{ // p->interval == 0  
+      p->cticks = 0; // sigalarm(0, 0), stop generating periodic alarm calls 
     }
     
     yield();
