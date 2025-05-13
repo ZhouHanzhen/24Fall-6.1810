@@ -12,4 +12,4 @@
 #define FSSIZE       2000  // size of file system in blocks
 #define MAXPATH      128   // maximum file path name
 #define USERSTACK    1     // user stack pages
-
+#define PGCOUNT      ((0x88000000) / (0x1000))  // number of pages in physical memory

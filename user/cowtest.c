@@ -22,7 +22,7 @@ simpletest()
     printf("sbrk(%d) failed\n", sz);
     exit(-1);
   }
-
+ 
   for(char *q = p; q < p + sz; q += 4096){
     *(int*)q = getpid();
   }
@@ -80,24 +80,29 @@ threetest()
       for(char *q = p; q < p + (sz/5)*4; q += 4096){
         *(int*)q = getpid();
       }
+   
+
       for(char *q = p; q < p + (sz/5)*4; q += 4096){
         if(*(int*)q != getpid()){
           printf("wrong content\n");
           exit(-1);
         }
       }
+      
       exit(-1);
     }
     for(char *q = p; q < p + (sz/2); q += 4096){
       *(int*)q = 9999;
     }
+    
     exit(0);
   }
 
   for(char *q = p; q < p + sz; q += 4096){
     *(int*)q = getpid();
   }
-
+  
+  
   wait(0);
 
   sleep(1);
@@ -108,6 +113,7 @@ threetest()
       exit(-1);
     }
   }
+  
 
   if(sbrk(-sz) == (char*)0xffffffffffffffffL){
     printf("sbrk(-%d) failed\n", sz);
@@ -210,6 +216,7 @@ forkforktest()
   sleep(5);
   for(int i = 0; i < sz; i += 4096){
     if(p[i] != 27){
+      printf("i: %d\n", i);
       printf("error: parent's memory was modified!\n");
       exit(1);
     }

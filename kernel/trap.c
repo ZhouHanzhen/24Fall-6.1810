@@ -11,6 +11,9 @@ uint ticks;
 
 extern char trampoline[], uservec[], userret[];
 
+extern int memrefcount[]; // reference count array
+extern int refcountflag;
+
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
 
@@ -65,7 +68,54 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  } else if(r_scause() == 15){ 
+    // write (Store/AMO) page fault
+    if(killed(p))
+      exit(-1);
+
+    uint64 addr = r_stval();
+    intr_on();
+
+    pte_t *pte = walk(p->pagetable, addr, 0);
+    if(pte == 0){
+      panic("usertrap: pte should exist");
+    }
+    if((*pte & PTE_V) == 0){
+      panic("usertrap: page not present");
+    }
+      
+    uint64 pa = PTE2PA(*pte);
+    uint flags = PTE_FLAGS(*pte);
+    if(flags & PTE_COW){ // originally writeable page
+      char *mem = kalloc();
+      if(mem == 0){
+        printf("usertrap: out of memory");
+        setkilled(p);
+      }else{
+        memmove(mem, (char*)pa, PGSIZE); 
+        flags &= ~PTE_COW; // clear COW bit
+        flags |= PTE_W;    // set write permission
+        *pte = PA2PTE((uint64)mem) | flags; // update the page table entry
+        
+        // process drops the old page from its page table
+        // decrement the old page's  reference count 
+        if(refcountflag == 0){
+          refcountflag = 1;
+          memrefcount[pa / PGSIZE] -= 1;
+          refcountflag = 0;
+        }
+        //memrefcount[pa / PGSIZE] -= 1;
+        // 如果原来的页没有进程引用了，那么就释放它
+        if(memrefcount[pa / PGSIZE] == 0){
+          memrefcount[pa / PGSIZE] += 1;
+          kfree((void*)pa);
+        }
+      }
+    }else{ // not a writeable page
+      printf("usertrap: not a writeable page");
+      setkilled(p);
+    }  
+  }else if((which_dev = devintr()) != 0){
     // ok
   } else {
     printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
