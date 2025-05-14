@@ -13,11 +13,13 @@ static int flag = 1;  // kfree in freerange
 
 void freerange(void *pa_start, void *pa_end);
 
+
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
 
-int memrefcount[PGCOUNT] = {0}; // reference count for each page
-int refcountflag = 0;  // 当refcountflag 为0时，进程才能更新memrefcount[]，并将refcountflag设置为1，
+//int memrefcount[PGCOUNT] = {0}; // reference count for each page
+//int refcountflag = 0;  // 当refcountflag 为0时，进程才能更新memrefcount[]，并将refcountflag设置为1，
+
 
 
 struct run {
@@ -29,13 +31,31 @@ struct {
   struct run *freelist;
 } kmem;
 
+struct {
+  struct spinlock lock;
+  int refcount[PGCOUNT];
+} memrefs;
+
+
 void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&memrefs.lock, "memrefs");
+
+  // Initialize the reference count array
+  for(int i = 0; i < PGCOUNT; i++){
+    acquire(&memrefs.lock);
+    memrefs.refcount[i] = 0;
+    release(&memrefs.lock);
+  }
+  
   freerange(end, (void*)PHYSTOP);
   flag = 0;
 }
+
+
+
 
 void
 freerange(void *pa_start, void *pa_end)
@@ -70,17 +90,13 @@ kfree(void *pa)
     kmem.freelist = r;
     release(&kmem.lock);
   }else{  // kfree after freerange
-    if(refcountflag == 0){
-      refcountflag = 1;
-      memrefcount[(uint64)pa / PGSIZE] -= 1;
-      refcountflag = 0;
-    }
-    // memrefcount[(uint64)pa / PGSIZE] -= 1;
-    if(memrefcount[(uint64)pa / PGSIZE] == 0){  // the last reference to pa
+    acquire(&memrefs.lock);
+    memrefs.refcount[(uint64)pa / PGSIZE] -= 1;
+    release(&memrefs.lock);
+    if(memrefs.refcount[(uint64)pa / PGSIZE] == 0){  // the last reference to pa
       if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP){
         panic("kfree");
       }
-
       // Fill with junk to catch dangling refs.
       memset(pa, 1, PGSIZE);
 
@@ -110,7 +126,10 @@ kalloc(void)
 
   if(r){
     memset((char*)r, 5, PGSIZE); // fill with junk
-    memrefcount[(uint64)r / PGSIZE] = 1; // set reference count to 1
+
+    acquire(&memrefs.lock);
+    memrefs.refcount[(uint64)r / PGSIZE] = 1; // set reference count to 1
+    release(&memrefs.lock);
   }
     
   return (void*)r;

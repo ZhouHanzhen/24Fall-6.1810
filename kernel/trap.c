@@ -11,8 +11,13 @@ uint ticks;
 
 extern char trampoline[], uservec[], userret[];
 
-extern int memrefcount[]; // reference count array
-extern int refcountflag;
+//extern int memrefcount[]; // reference count array
+//extern int refcountflag;
+//extern struct spinlock refcountlock;
+extern struct {
+  struct spinlock lock;
+  int refcount[PGCOUNT];
+} memrefs;
 
 // in kernelvec.S, calls kerneltrap().
 void kernelvec();
@@ -95,19 +100,18 @@ usertrap(void)
         memmove(mem, (char*)pa, PGSIZE); 
         flags &= ~PTE_COW; // clear COW bit
         flags |= PTE_W;    // set write permission
-        *pte = PA2PTE((uint64)mem) | flags; // update the page table entry
+        *pte = PA2PTE((uint64)mem) | flags; // install the new page in the PTE with PTE_W set
         
         // process drops the old page from its page table
         // decrement the old page's  reference count 
-        if(refcountflag == 0){
-          refcountflag = 1;
-          memrefcount[pa / PGSIZE] -= 1;
-          refcountflag = 0;
-        }
-        //memrefcount[pa / PGSIZE] -= 1;
+        acquire(&memrefs.lock);
+        memrefs.refcount[pa / PGSIZE] -= 1;
+        release(&memrefs.lock);
         // 如果原来的页没有进程引用了，那么就释放它
-        if(memrefcount[pa / PGSIZE] == 0){
-          memrefcount[pa / PGSIZE] += 1;
+        if(memrefs.refcount[pa / PGSIZE] == 0){
+          acquire(&memrefs.lock);
+          memrefs.refcount[pa / PGSIZE] += 1;
+          release(&memrefs.lock);
           kfree((void*)pa);
         }
       }

@@ -5,7 +5,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
-
+#include "spinlock.h"
 /*
  * the kernel's page table.
  */
@@ -15,9 +15,13 @@ extern char etext[];  // kernel.ld sets this to end of kernel code.
 
 extern char trampoline[]; // trampoline.S
 
-extern int memrefcount[]; // reference count array
-extern int refcountflag;
-
+//extern int memrefcount[]; // reference count array
+//extern int refcountflag;
+//extern struct spinlock refcountlock;
+extern struct {
+  struct spinlock lock;
+  int refcount[PGCOUNT];
+} memrefs;
 
 // Make a direct-map page table for the kernel.
 pagetable_t
@@ -356,7 +360,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 
       //*pte &= ~PTE_W;   // clear parent's pte write permission
       //*pte |= PTE_COW;  // mark parent's pte as copy-on-write 
-      *pte = PA2PTE(pa) | flags; // update the page table entry
+      *pte = PA2PTE(pa) | flags; // update the parent page table entry
     }
     
     if(mappages(new, i, PGSIZE, pa, flags) != 0){ // map the parent's physical pages into the child
@@ -364,12 +368,9 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     }
 
     // Increment a page's reference count when fork causes a child to share the page
-    if(refcountflag == 0){
-      refcountflag = 1;
-      memrefcount[pa / PGSIZE] += 1;
-      refcountflag = 0;     
-    }
-    
+    acquire(&memrefs.lock);
+    memrefs.refcount[pa / PGSIZE] += 1;
+    release(&memrefs.lock);  
   }
   return 0;
 
@@ -424,10 +425,14 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
           // process drops the old page from its page table
           // decrement the old page's  reference count 
-          memrefcount[pa / PGSIZE] -= 1;
+          acquire(&memrefs.lock);
+          memrefs.refcount[pa / PGSIZE] -= 1;
+          release(&memrefs.lock);
           // 如果原来的页没有进程引用了，那么就释放它
-          if(memrefcount[pa / PGSIZE] == 0){
-            memrefcount[pa / PGSIZE] += 1;
+          if(memrefs.refcount[pa / PGSIZE] == 0){
+            acquire(&memrefs.lock);
+            memrefs.refcount[pa / PGSIZE] += 1;
+            release(&memrefs.lock);
             kfree((void*)pa);
           }
         }
