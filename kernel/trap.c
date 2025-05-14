@@ -81,12 +81,21 @@ usertrap(void)
     uint64 addr = r_stval();
     intr_on();
 
+    if(addr >= MAXVA){
+      printf("usertrap: write to addresses above MAXVA\n");
+      setkilled(p);
+      exit(-1);
+    }
     pte_t *pte = walk(p->pagetable, addr, 0);
     if(pte == 0){
-      panic("usertrap: pte should exist");
+      printf("usertrap: pte should exist");
+      setkilled(p);
+      exit(-1);
     }
     if((*pte & PTE_V) == 0){
-      panic("usertrap: page not present");
+      printf("usertrap: page not present");
+      setkilled(p);
+      exit(-1);
     }
       
     uint64 pa = PTE2PA(*pte);
@@ -96,6 +105,7 @@ usertrap(void)
       if(mem == 0){
         printf("usertrap: out of memory");
         setkilled(p);
+        exit(-1);
       }else{
         memmove(mem, (char*)pa, PGSIZE); 
         flags &= ~PTE_COW; // clear COW bit
@@ -116,8 +126,9 @@ usertrap(void)
         }
       }
     }else{ // not a writeable page
-      printf("usertrap: not a writeable page");
+      printf("usertrap: not a writeable page\n");
       setkilled(p);
+      exit(-1);
     }  
   }else if((which_dev = devintr()) != 0){
     // ok
