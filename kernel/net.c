@@ -217,6 +217,7 @@ arp_rx(char *inbuf)
   struct arp *inarp = (struct arp *) (ineth + 1);
 
   char *buf = kalloc();
+  
   if(buf == 0)
     panic("send_arp_reply");
   
@@ -236,7 +237,7 @@ arp_rx(char *inbuf)
   arp->sip = htonl(local_ip);
   memmove(arp->tha, ineth->shost, ETHADDR_LEN);
   arp->tip = inarp->sip;
-
+  
   e1000_transmit(buf, sizeof(*eth) + sizeof(*arp));
 
   kfree(inbuf);

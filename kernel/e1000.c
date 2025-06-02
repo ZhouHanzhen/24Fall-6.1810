@@ -94,27 +94,77 @@ e1000_init(uint32 *xregs)
 int
 e1000_transmit(char *buf, int len)
 {
-  //
-  // Your code here.
-  //
   // buf contains an ethernet frame; program it into
   // the TX descriptor ring so that the e1000 sends it. Stash
   // a pointer so that it can be freed after send completes.
   //
+  int i;
 
-  
+  acquire(&e1000_lock);
+  // ask the E1000 for the TX ring index
+  i = regs[E1000_TDT];   // read the E1000_TDT control register.
+
+  if(tx_ring[i].status & E1000_TXD_STAT_DD){
+    // the descriptor is free, so we can use it.
+    if(tx_bufs[i]) {
+      // free the previous buffer if it exists
+      kfree(tx_bufs[i]);
+    }
+    tx_ring[i].addr = (uint64) buf; // set the address of the buffer to send
+    tx_ring[i].length = len;        // set the length of the buffer
+    tx_ring[i].cmd = E1000_TXD_CMD_RS | E1000_TXD_CMD_EOP; // request send and end of packet
+    tx_bufs[i] = buf;               // stash the pointer to free later
+
+    // update the tail pointer to tell the E1000 to send this packet.
+    regs[E1000_TDT] = (i + 1) % TX_RING_SIZE;
+  } else {
+    // the descriptor is not free, so we can't send the packet.
+    release(&e1000_lock);
+    printf("e1000_transmit: TX descriptor not free\n");
+    return -1;
+  }
+ 
+  release(&e1000_lock);
   return 0;
 }
 
 static void
 e1000_recv(void)
 {
-  //
-  // Your code here.
-  //
   // Check for packets that have arrived from the e1000
   // Create and deliver a buf for each packet (using net_rx()).
   //
+  int i;
+
+  while (1) {
+    acquire(&e1000_lock);
+    i = (regs[E1000_RDT] + 1) % RX_RING_SIZE; // read the E1000_RDT control register.
+
+    // check if a new packet is available
+    if (!(rx_ring[i].status & E1000_RXD_STAT_DD)) {
+      release(&e1000_lock);
+      break; // no more packets
+    }
+    release(&e1000_lock);  // net_rx() calls e1000_transmit() which acquires e1000_lock,
+                            // so we must release it before calling net_rx()
+
+    // we have a packet, so deliver it
+    net_rx(rx_bufs[i], rx_ring[i].length);  
+
+    acquire(&e1000_lock);
+    // reset the descriptor
+    rx_bufs[i] = kalloc();
+    if (!rx_bufs[i]) {
+      panic("e1000_recv: kalloc failed");
+    }
+    rx_ring[i].addr = (uint64) rx_bufs[i]; // reset the address
+
+    // clear the status
+    rx_ring[i].status = 0;
+
+    regs[E1000_RDT] = i;
+    release(&e1000_lock);
+  }
 
 }
 
