@@ -29,6 +29,7 @@ txone()
   if(send(2003, dst, dport, buf, 5) < 0){
     printf("txone: send() failed\n");
   }
+  printf("txone: send() finished\n");
 }
 
 //
@@ -271,6 +272,7 @@ ping0()
   uint32 src = 0;
   uint16 sport = 0;
   memset(ibuf, 0, sizeof(ibuf));
+  
   int cc = recv(2004, &src, &sport, ibuf, sizeof(ibuf)-1);
   if(cc < 0){
     fprintf(2, "ping0: recv() failed\n");

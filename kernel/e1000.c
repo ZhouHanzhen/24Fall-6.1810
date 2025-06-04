@@ -128,7 +128,7 @@ e1000_transmit(char *buf, int len)
   return 0;
 }
 
-static void
+void
 e1000_recv(void)
 {
   // Check for packets that have arrived from the e1000

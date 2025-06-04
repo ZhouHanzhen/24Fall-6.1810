@@ -10,6 +10,7 @@
 #include "file.h"
 #include "net.h"
 
+
 // xv6's ethernet and IP addresses
 static uint8 local_mac[ETHADDR_LEN] = { 0x52, 0x54, 0x00, 0x12, 0x34, 0x56 };
 static uint32 local_ip = MAKE_IP_ADDR(10, 0, 2, 15);
@@ -19,10 +20,14 @@ static uint8 host_mac[ETHADDR_LEN] = { 0x52, 0x55, 0x0a, 0x00, 0x02, 0x02 };
 
 static struct spinlock netlock;
 
+static struct port ports[8] __attribute__((aligned(16)));
+
+
 void
 netinit(void)
 {
   initlock(&netlock, "netlock");
+  memset(ports, 0, sizeof(ports));
 }
 
 
@@ -34,10 +39,27 @@ netinit(void)
 uint64
 sys_bind(void)
 {
-  //
-  // Your code here.
-  //
+  int port;
+  argint(0, &port);
 
+  //printf("port: %d\n", port);
+  for(int i = 0; i < 8; i++){
+    acquire(&netlock);
+    //printf("ports[%d].port: %d\n", i, ports[i].port);
+    if(ports[i].port == 0){   // find a position in ports array for a port
+      // initialize port's structure in order to store arriving packets for a subsequent recv() call.
+      ports[i].port = port;
+      //printf("ports[%d].port: %d\n", i, ports[i].port);
+      for(int j = 0; j < Q_SIZE; j++){
+        ports[i].packets[j] = 0;
+      }
+      ports[i].r = 0;
+      ports[i].w = 0;
+      release(&netlock);
+      return 0;
+    }
+    release(&netlock);
+  }
   return -1;
 }
 
@@ -74,9 +96,60 @@ sys_unbind(void)
 uint64
 sys_recv(void)
 {
-  //
-  // Your code here.
-  //
+  struct proc *p = myproc();
+  int dport;
+  uint64 src;
+  uint64 sport;
+  uint64 buf;
+  int maxlen;
+
+  argint(0, &dport);
+  argaddr(1, &src);
+  argaddr(2, &sport);
+  argaddr(3, &buf);
+  argint(4, &maxlen);
+
+
+  for(int i = 0; i < 8; i++){
+    acquire(&netlock);
+    if(ports[i].port == dport){
+      while(ports[i].r == ports[i].w){  // if no packets are queued, wait for one
+        sleep(&ports[i], &netlock);
+      }
+      
+      // return right away with the earliest waiting packet.
+      char* packet = ports[i].packets[(ports[i].r) % Q_SIZE]; 
+      if(packet == 0){
+        return -1;
+      }
+      struct eth *eth = (struct eth *) packet;
+      struct ip *ip = (struct ip *)(eth + 1);
+      struct udp *udp = (struct udp *)(ip + 1);
+      char* payload = (char *)(udp + 1);
+      
+      // copies the packet's 32-bit source IP address to *src
+      uint32 ip_src = ntohl(ip->ip_src);
+      copyout(p->pagetable, src,(char*)(&ip_src), sizeof(ip->ip_src));
+      // copies the packet's 16-bit UDP source port number to *sport
+      uint16 udp_sport = ntohs(udp->sport);
+      copyout(p->pagetable, sport, (char*)(&udp_sport), sizeof(udp->sport));
+      // copies at most maxlen bytes of the packet's UDP payload to buf
+      int payload_len = ntohs(udp->ulen) - sizeof(struct udp);
+      if(payload_len > maxlen){
+        payload_len = maxlen;
+      }
+      copyout(p->pagetable, buf, payload, payload_len);
+
+      // removes the packet from the queue
+      kfree(packet);
+      ports[i].packets[(ports[i].r) % Q_SIZE] = 0; // clear the packet pointer in the queue
+      ports[i].r += 1; // increment the read index
+      
+      release(&netlock);
+      return payload_len;
+    }
+    release(&netlock);
+  }
   return -1;
 }
 
@@ -186,12 +259,40 @@ ip_rx(char *buf, int len)
   static int seen_ip = 0;
   if(seen_ip == 0)
     printf("ip_rx: received an IP packet\n");
+  // printf("packets: %s\n", buf + sizeof(struct eth) + sizeof(struct ip) + sizeof(struct udp));
   seen_ip = 1;
 
-  //
-  // Your code here.
-  //
-  
+  struct eth *eth = (struct eth *)buf;
+  struct ip *ip = (struct ip *)(eth + 1);
+
+  // ip_rx() should decide if the arriving packet is UDP, 
+  // and whether its destination port has been passed to bind(); 
+  if(ip->ip_p == IPPROTO_UDP){
+    struct udp *udp = (struct udp *)(ip + 1);
+    //printf("udp dport: %d\n", ntohs(udp->dport));
+    //printf("udp sport: %d\n", ntohs(udp->sport));
+    for(int i = 0; i < 8; i++){
+      acquire(&netlock);
+      //printf("ports[%d].port: %d\n", i, ports[i].port);
+      
+      if(ports[i].port == ntohs(udp->dport)){
+        if(ports[i].r + Q_SIZE == ports[i].w){ // check if the queue is full
+          kfree(buf); // packets queue is full, drop the incoming packet;
+          release(&netlock);
+          break;
+        }
+
+        ports[i].packets[(ports[i].w++) % Q_SIZE] = buf; // save the packet where recv() can find it
+        wakeup(&ports[i]);
+        release(&netlock);
+        return;
+      }
+      release(&netlock);
+    }
+  }else{
+    kfree(buf); // not a UDP packet, drop it
+  }
+  return;
 }
 
 //

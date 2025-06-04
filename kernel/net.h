@@ -125,3 +125,14 @@ struct dns_data {
   uint32 ttl;
   uint16 len;
 } __attribute__((packed));
+
+
+#define Q_SIZE 16
+struct port{
+  int port;
+  char* packets[Q_SIZE];
+  int count;    // so for queue first in first out 
+                // recv() should see arriving packets for a given port in arrival order
+  int r;
+  int w;
+};
