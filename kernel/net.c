@@ -256,11 +256,12 @@ void
 ip_rx(char *buf, int len)
 {
   // don't delete this printf; make grade depends on it.
+  acquire(&netlock);
   static int seen_ip = 0;
   if(seen_ip == 0)
     printf("ip_rx: received an IP packet\n");
-  // printf("packets: %s\n", buf + sizeof(struct eth) + sizeof(struct ip) + sizeof(struct udp));
   seen_ip = 1;
+  release(&netlock);
 
   struct eth *eth = (struct eth *)buf;
   struct ip *ip = (struct ip *)(eth + 1);
@@ -269,26 +270,27 @@ ip_rx(char *buf, int len)
   // and whether its destination port has been passed to bind(); 
   if(ip->ip_p == IPPROTO_UDP){
     struct udp *udp = (struct udp *)(ip + 1);
-    //printf("udp dport: %d\n", ntohs(udp->dport));
-    //printf("udp sport: %d\n", ntohs(udp->sport));
+  
     for(int i = 0; i < 8; i++){
       acquire(&netlock);
-      //printf("ports[%d].port: %d\n", i, ports[i].port);
-      
+
       if(ports[i].port == ntohs(udp->dport)){
         if(ports[i].r + Q_SIZE == ports[i].w){ // check if the queue is full
           kfree(buf); // packets queue is full, drop the incoming packet;
           release(&netlock);
-          break;
+          return;
         }
 
         ports[i].packets[(ports[i].w++) % Q_SIZE] = buf; // save the packet where recv() can find it
+        
         wakeup(&ports[i]);
         release(&netlock);
         return;
       }
+      
       release(&netlock);
     }
+    kfree(buf); // no port bound to this packet's destination port, drop it
   }else{
     kfree(buf); // not a UDP packet, drop it
   }
@@ -305,6 +307,7 @@ ip_rx(char *buf, int len)
 void
 arp_rx(char *inbuf)
 {
+  acquire(&netlock);
   static int seen_arp = 0;
 
   if(seen_arp){
@@ -313,6 +316,7 @@ arp_rx(char *inbuf)
   }
   printf("arp_rx: received an ARP packet\n");
   seen_arp = 1;
+  release(&netlock);
 
   struct eth *ineth = (struct eth *) inbuf;
   struct arp *inarp = (struct arp *) (ineth + 1);

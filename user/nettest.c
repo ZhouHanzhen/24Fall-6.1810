@@ -29,7 +29,7 @@ txone()
   if(send(2003, dst, dport, buf, 5) < 0){
     printf("txone: send() failed\n");
   }
-  printf("txone: send() finished\n");
+  //printf("txone: send() finished\n");
 }
 
 //
