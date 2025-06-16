@@ -9,7 +9,8 @@
 #include "riscv.h"
 #include "defs.h"
 
-void freerange(void *pa_start, void *pa_end);
+void freerange(void *pa_start, void *pa_end, int i);
+void kfree_in_init(void *pa, int id);
 
 extern char end[]; // first address after kernel.
                    // defined by kernel.ld.
@@ -19,32 +20,37 @@ struct run {
 };
 
 struct {
-  struct spinlock lock;
-  struct run *freelist;
+  struct spinlock lock[NCPU];
+  struct run *freelist[NCPU]; // per-CPU freelist
 } kmem;
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
-  freerange(end, (void*)PHYSTOP);
+  int i, j;
+  for(i = 0; i < NCPU; i++){
+    initlock(&kmem.lock[i], "kmem");
+  }
+  
+  freerange(end, (void*)(KERNBASE + MEMPERCPU), 0);
+  for(j = 1; j < NCPU; j++){
+    void* start = (void*)(KERNBASE + j * MEMPERCPU);
+    void* stop = (void*)(KERNBASE + (j + 1) * MEMPERCPU);  
+    freerange(start, stop, j);
+  }
 }
 
 void
-freerange(void *pa_start, void *pa_end)
+freerange(void *pa_start, void *pa_end, int i)
 {
   char *p;
   p = (char*)PGROUNDUP((uint64)pa_start);
   for(; p + PGSIZE <= (char*)pa_end; p += PGSIZE)
-    kfree(p);
+    kfree_in_init(p, i);
 }
 
-// Free the page of physical memory pointed at by pa,
-// which normally should have been returned by a
-// call to kalloc().  (The exception is when
-// initializing the allocator; see kinit above.)
 void
-kfree(void *pa)
+kfree_in_init(void *pa, int id)
 {
   struct run *r;
 
@@ -56,10 +62,38 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  acquire(&kmem.lock[id]);
+  r->next = kmem.freelist[id];
+  kmem.freelist[id] = r;
+  release(&kmem.lock[id]);
+}
+
+// Free the page of physical memory pointed at by pa,
+// which normally should have been returned by a
+// call to kalloc().  (The exception is when
+// initializing the allocator; see kinit above.)
+void
+kfree(void *pa)
+{
+  struct run *r;
+  int id;
+
+  push_off();
+  id = cpuid();
+  pop_off();
+
+  if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
+    panic("kfree");
+
+  // Fill with junk to catch dangling refs.
+  memset(pa, 1, PGSIZE);
+
+  r = (struct run*)pa;
+
+  acquire(&kmem.lock[id]);
+  r->next = kmem.freelist[id];
+  kmem.freelist[id] = r;
+  release(&kmem.lock[id]);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -69,12 +103,17 @@ void *
 kalloc(void)
 {
   struct run *r;
+  int id;
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
+  push_off();
+  id = cpuid();
+  pop_off();
+
+  acquire(&kmem.lock[id]);
+  r = kmem.freelist[id];
   if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+    kmem.freelist[id] = r->next;
+  release(&kmem.lock[id]);
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
