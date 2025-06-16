@@ -80,7 +80,7 @@ kfree(void *pa)
 
   push_off();
   id = cpuid();
-  pop_off();
+  
 
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
@@ -94,6 +94,8 @@ kfree(void *pa)
   r->next = kmem.freelist[id];
   kmem.freelist[id] = r;
   release(&kmem.lock[id]);
+  
+  pop_off();
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -107,13 +109,31 @@ kalloc(void)
 
   push_off();
   id = cpuid();
-  pop_off();
-
+  
   acquire(&kmem.lock[id]);
   r = kmem.freelist[id];
-  if(r)
+  if(r){
     kmem.freelist[id] = r->next;
-  release(&kmem.lock[id]);
+    release(&kmem.lock[id]);
+  }else{  // this cpu has no free pages
+    release(&kmem.lock[id]);
+    for(int i = 0; i < NCPU; i++){
+      if(i == id){
+        // skip this cpu
+        continue;
+      }
+      acquire(&kmem.lock[i]);
+      r = kmem.freelist[i];
+      if(r){
+        kmem.freelist[i] = r->next;
+        release(&kmem.lock[i]);
+        break; // found a free page in another cpu
+      }
+      release(&kmem.lock[i]);
+    }
+  }
+  
+  pop_off();
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
