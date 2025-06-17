@@ -164,8 +164,10 @@ void test1()
     unlink(file);
     if (i == 0) {
       createfile(file, BIG);
+      printf("created %s\n", file);
     } else {
       createfile(file, 1);
+      printf("created %s\n", file);
     }
   }
   for(int i = 0; i < NCHILD; i++){
@@ -177,15 +179,19 @@ void test1()
     }
     if(pid == 0){
       if (i==0) {
+        printf("child %d reading %s\n", getpid(), file);
         for (i = 0; i < N; i++) {
           readfile(file, BIG*BSIZE, BSIZE);
         }
+        printf("child %d finished reading %s\n", getpid(), file);
         unlink(file);
         exit(0);
       } else {
+        printf("child %d reading %s\n", getpid(), file);
         for (i = 0; i < N*20; i++) {
           readfile(file, 1*BSIZE, BSIZE);
         }
+        printf("child %d finished reading %s\n", getpid(), file);
         unlink(file);
         exit(0);
       }
