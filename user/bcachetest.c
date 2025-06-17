@@ -184,11 +184,12 @@ void test1()
         exit(0);
       } else {
         for (i = 0; i < N*20; i++) {
-          readfile(file, 1, BSIZE);
+          readfile(file, 1*BSIZE, BSIZE);
         }
         unlink(file);
+        exit(0);
       }
-      exit(0);
+      
     }
   }
 
