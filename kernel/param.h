@@ -13,3 +13,4 @@
 #define MAXPATH      128   // maximum file path name
 #define USERSTACK    1     // user stack pages
 #define MEMPERCPU    16*1024*1024 // memory list size per cpu
+#define HTSIZE       13 // size of hash table for buffer cache
