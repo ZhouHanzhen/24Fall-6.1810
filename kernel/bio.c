@@ -50,13 +50,11 @@ binit(void)
   i = 0;
   for(b = bcache.buf; b < bcache.buf+NBUF; b++){
     j = i % HTSIZE;
-    acquire(&bcache.locks[j]);
     b->next = bcache.heads[j].next;
     b->prev = &bcache.heads[j];
     initsleeplock(&b->lock, "buffer");
     bcache.heads[j].next->prev = b;
     bcache.heads[j].next = b;
-    release(&bcache.locks[j]);
     i++;
   }
 }
@@ -68,9 +66,10 @@ static struct buf*
 bget(uint dev, uint blockno)
 {
   struct buf *b;
-  int i = blockno % HTSIZE;
+  int i;
   int j;
 
+  i = blockno % HTSIZE;   // i is the hash bucket index for blockno
   // Is the block already cached?
   acquire(&bcache.locks[i]);
   for(b = bcache.heads[i].next; b != &bcache.heads[i]; b = b->next){
@@ -81,16 +80,12 @@ bget(uint dev, uint blockno)
       return b;
     }
   }
-
-  acquire(&bcache.lock);  // Not cached.
   release(&bcache.locks[i]); 
 
   // Not cached.
   // Recycle the unused buffer in hash table buckets.
   for(j = 0; j < HTSIZE; j++){
     acquire(&bcache.locks[j]);
-    release(&bcache.lock);
-
     // Scan the j-th bucket for an unused buffer.
     for(b = bcache.heads[j].next; b != &bcache.heads[j]; b = b->next){
       if(b->refcnt == 0) {  // find a unused buffer
@@ -111,14 +106,15 @@ bget(uint dev, uint blockno)
 
           // set b
           acquire(&bcache.lock);
+          release(&bcache.locks[j]);  // done with bucket j
           b->dev = dev;
           b->blockno = blockno;
           b->valid = 0;
           b->refcnt = 1;
-          release(&bcache.locks[j]);
+          
 
           // add b to i bucket
-          acquire(&bcache.locks[i]);
+          acquire(&bcache.locks[i]);  // change to bucket i
           release(&bcache.lock);
           b->next = bcache.heads[i].next;
           b->prev = &bcache.heads[i];
@@ -132,11 +128,8 @@ bget(uint dev, uint blockno)
       } // end if(b->refcnt == 0)
     }
     // If not found, continue to the next bucket.
-    acquire(&bcache.lock);
     release(&bcache.locks[j]);
   }
-
-  release(&bcache.lock);
   panic("bget: no buffers");
 }
 
