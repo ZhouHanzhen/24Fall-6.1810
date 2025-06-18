@@ -28,6 +28,7 @@ void
 kinit()
 {
   int i, j;
+ 
   for(i = 0; i < NCPU; i++){
     initlock(&kmem.lock[i], "kmem");
   }
@@ -62,10 +63,8 @@ kfree_in_init(void *pa, int id)
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock[id]);
   r->next = kmem.freelist[id];
   kmem.freelist[id] = r;
-  release(&kmem.lock[id]);
 }
 
 // Free the page of physical memory pointed at by pa,
