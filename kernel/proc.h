@@ -102,6 +102,22 @@ struct proc {
   struct trapframe *trapframe; // data page for trampoline.S
   struct context context;      // swtch() here to run process
   struct file *ofile[NOFILE];  // Open files
+  struct vma *mappedf[NVMA];   // vma structures for mapped files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  uint64 unused;               // end of an unused region in the process's address space
 };
+
+struct vma {
+  uint64 start;
+  uint64 addr;
+  int len;
+  int prot;
+  int flags;
+  int fd;
+  int offset;
+  struct file *fl;
+  int ref; // reference count
+};
+
+

@@ -19,10 +19,82 @@ struct {
   struct file file[NFILE];
 } ftable;
 
+struct {
+  struct spinlock lock;
+  struct vma vmas[NVMA];
+}vma_table;
+
+void
+vmainit(void)
+{
+  initlock(&vma_table.lock, "vma_table");
+}
+
 void
 fileinit(void)
 {
+  struct vma *v;
   initlock(&ftable.lock, "ftable");
+  
+  acquire(&vma_table.lock);
+  for(v = vma_table.vmas; v < vma_table.vmas + NVMA; v++){
+    v->fd = -1;
+  }
+  release(&vma_table.lock);
+}
+
+// Allocate a vma structure.
+struct vma*
+vmaalloc(void)
+{
+  struct vma *v;
+
+  acquire(&vma_table.lock);
+  for(v = vma_table.vmas; v < vma_table.vmas + NVMA; v++){
+    if(v->ref == 0){
+      v->ref = 1;
+      release(&vma_table.lock);
+      return v;
+    }
+  }
+  release(&vma_table.lock);
+  return 0;
+}
+
+// Release a vma structure.
+void
+vmafree(struct vma* v){
+  acquire(&vma_table.lock);
+  if(v->ref < 1)
+    panic("vmafree");
+  if(--v->ref > 0){
+    release(&vma_table.lock);
+    return;
+  }
+  v->start = 0; // Clear the start address
+  v->addr = 0; // Clear the address
+  v->len = 0; // Clear the length
+  v->prot = 0; // Clear the protection flags
+  v->flags = 0; // Clear the flags
+  v->fd = -1; // Clear the file descriptor
+  v->offset = 0; // Clear the offset
+  v->fl = 0; // Clear the file pointer
+  release(&vma_table.lock);
+}
+
+// Add a VMA to the process's table of mapped regions
+int addvma(struct vma* v){
+  int i;
+  struct proc *p = myproc();
+
+  for(i = 0; i < NVMA; i++){
+    if(p->mappedf[i] == 0){
+      p->mappedf[i] = v;
+      return i;
+    }
+  }
+
+  return -1;
 }
 
 // Allocate a file structure.

@@ -91,3 +91,53 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_mmap(void)
+{
+  int ret;
+  uint64 addr, start, old;
+  int len, prot, flags, fd, offset;
+  argaddr(0, &addr);
+  argint(1, &len);
+  argint(2, &prot);
+  argint(3, &flags);
+  argint(4, &fd);
+  argint(5, &offset);
+
+  
+  struct proc *p = myproc();
+  struct vma *vma = vmaalloc();
+  if(vma == 0){
+    return -1;  // No available VMA structures
+  }
+  vma->addr = addr;
+  vma->len = len;
+  vma->prot = prot;
+  vma->flags = flags;
+  vma->fd = fd;
+  vma->offset = offset;
+
+  filedup(p->ofile[fd]);
+  vma->fl = p->ofile[fd];
+
+  old = p->unused;
+  start = PGROUNDDOWN(p->unused - len);
+  p->unused = start;
+  vma->start = start;
+
+  ret = addvma(vma);
+  if(ret < 0){
+    fileclose(p->ofile[fd]);
+    vmafree(vma);
+    p->unused = old;
+    return -1;
+  }
+  return start;
+}
+
+uint64 
+sys_munmap(void)
+{
+  return -1;
+}
