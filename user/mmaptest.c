@@ -140,10 +140,10 @@ mmap_test(void)
 
   // file should not have been modified.
   if((fd = open(f, O_RDONLY)) < 0) err("open");
-  if(read(fd, buf, PGSIZE) != PGSIZE) err("read");
+  if(read(fd, buf, PGSIZE) != PGSIZE) err("read");        // read the first page of 'A's
   if(buf[0] != 'A')
     err("write to MAP_PRIVATE was written to file");
-  if(read(fd, buf, PGSIZE) != PGSIZE/2) err("read");
+  if(read(fd, buf, PGSIZE/2) != PGSIZE/2) err("read");    // read the 0.5 of the second page of 'A's
   if(buf[0] != 'A')
     err("write to MAP_PRIVATE was written to file");
   close(fd);
