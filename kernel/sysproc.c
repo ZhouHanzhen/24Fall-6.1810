@@ -6,6 +6,9 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "fcntl.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
 
 uint64
 sys_exit(void)
@@ -122,6 +125,14 @@ sys_mmap(void)
   filedup(p->ofile[fd]);
   vma->fl = p->ofile[fd];
 
+  // if the mapped file is read-only and the mmap is shared,
+  // don't mmap it.
+  if((vma->flags & MAP_SHARED) && (vma->fl->writable == 0) && (vma->prot & PROT_WRITE)){
+    fileclose(p->ofile[fd]);
+    vmafree(vma);
+    return -1;
+  }
+
   old = p->unused;
   start = PGROUNDDOWN(p->unused - len);   // start address of the mapped region
   p->unused = start;
@@ -140,8 +151,8 @@ sys_mmap(void)
 uint64 
 sys_munmap(void)
 {
-  uint64 addr;
-  int len;
+  uint64 addr, addri;
+  int len, tot;
   argaddr(0, &addr);
   argint(1, &len);
 
@@ -157,15 +168,32 @@ sys_munmap(void)
       continue;
     }
     if(addr >= v->start && (addr + len) <= (v->start + v->len)){
-      // If an unmapped page has been modified and 
-      // the file is mapped MAP_SHARED, write the page back to the file.
-      if(v->flags & MAP_SHARED){
-        filewrite(v->fl, addr, len);
+      // uvmunmap the mapped region page by page
+      addri = addr;
+      tot = 0;
+      while(tot < len){ 
+        // if the address is not mapped with memory and the relevent PTE,
+        // don't need to write back and uvmunmap 
+        pte_t* pte = walk(p->pagetable, addri, 0);
+        if(pte == 0 || (*pte & PTE_V) == 0){ 
+          ;
+        }else{
+          // If an unmapped page has been modified and 
+          // the file is mapped MAP_SHARED, write the page back to the file.
+          if(v->flags & MAP_SHARED){
+            filewrite(v->fl, addri, PGSIZE);
+          }
+
+          // remove mmap mappings in the indicated address range
+          // uvmunmap(p->pagetable, addr, len / PGSIZE, 1);
+          uvmunmap(p->pagetable, addri, 1, 1);
+        }
+
+        tot += PGSIZE;
+        addri += PGSIZE;
       }
       
-      // remove mmap mappings in the indicated address range
-      uvmunmap(p->pagetable, addr, len / PGSIZE, 1);
-
+      
       // update the vma structure 
       v->start = addr + len;
       v->len = v->len - len;

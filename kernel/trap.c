@@ -69,7 +69,7 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if(r_scause() == 13){
+  } else if(r_scause() == 13 || r_scause() == 15){    //  Load page fault or Store/AMO page fault
     uint64 stval = r_stval();
     int flag = 0;
 
