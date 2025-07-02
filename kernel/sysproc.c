@@ -5,6 +5,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "fcntl.h"
 
 uint64
 sys_exit(void)
@@ -156,21 +157,31 @@ sys_munmap(void)
       continue;
     }
     if(addr >= v->start && (addr + len) <= (v->start + v->len)){
+      // If an unmapped page has been modified and 
+      // the file is mapped MAP_SHARED, write the page back to the file.
+      if(v->flags & MAP_SHARED){
+        filewrite(v->fl, addr, len);
+      }
+      
       // remove mmap mappings in the indicated address range
       uvmunmap(p->pagetable, addr, len / PGSIZE, 1);
 
       // update the vma structure 
       v->start = addr + len;
       v->len = v->len - len;
+      v->offset = v->offset + len;
       p->unused = v->start;
+      
       if(v->len == 0){  
         // if the whole mapped region of the vma structure is removed
+        // decrement the reference count of the corresponding struct file
         // free the vma structure
         fileclose(v->fl);
         vmafree(v);
         p->mappedf[i] = 0;
       }
+      break;
     }
   }
-  return -1;
+  return 0;
 }
