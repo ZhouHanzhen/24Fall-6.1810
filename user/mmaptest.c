@@ -67,9 +67,15 @@ makefile(const char *f)
   if (fd == -1)
     err("open");
   memset(buf, 'A', BSIZE);
+  memset(buf + BSIZE, 0, BSIZE);
   // write 1.5 page
   for (i = 0; i < n + n/2; i++) {
     if (write(fd, buf, BSIZE) != BSIZE)
+      err("write A makefile");
+  }
+  //write the left 0.5 page
+  for(i = 0; i < n / 2; i++){
+    if(write(fd, buf+BSIZE, BSIZE) != BSIZE)
       err("write 0 makefile");
   }
   if (close(fd) == -1)

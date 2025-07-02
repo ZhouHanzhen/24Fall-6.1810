@@ -122,7 +122,7 @@ sys_mmap(void)
   vma->fl = p->ofile[fd];
 
   old = p->unused;
-  start = PGROUNDDOWN(p->unused - len);
+  start = PGROUNDDOWN(p->unused - len);   // start address of the mapped region
   p->unused = start;
   vma->start = start;
 
@@ -139,5 +139,38 @@ sys_mmap(void)
 uint64 
 sys_munmap(void)
 {
+  uint64 addr;
+  int len;
+  argaddr(0, &addr);
+  argint(1, &len);
+
+  // checke the address range whether is in the mapped region
+  struct proc* p = myproc();
+  struct vma* v;
+  for(int i = 0; i < NVMA; i++){
+    v = p->mappedf[i];
+    if(v == 0){
+      continue;
+    }
+    if(v->ref == 0){
+      continue;
+    }
+    if(addr >= v->start && (addr + len) <= (v->start + v->len)){
+      // remove mmap mappings in the indicated address range
+      uvmunmap(p->pagetable, addr, len / PGSIZE, 1);
+
+      // update the vma structure 
+      v->start = addr + len;
+      v->len = v->len - len;
+      p->unused = v->start;
+      if(v->len == 0){  
+        // if the whole mapped region of the vma structure is removed
+        // free the vma structure
+        fileclose(v->fl);
+        vmafree(v);
+        p->mappedf[i] = 0;
+      }
+    }
+  }
   return -1;
 }

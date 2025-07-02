@@ -105,7 +105,7 @@ struct proc {
   struct vma *mappedf[NVMA];   // vma structures for mapped files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
-  uint64 unused;               // end of an unused region in the process's address space
+  uint64 unused;               // end of the unused region in the process's address space
 };
 
 struct vma {
