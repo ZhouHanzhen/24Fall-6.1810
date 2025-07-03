@@ -198,7 +198,7 @@ sys_munmap(void)
       v->start = addr + len;
       v->len = v->len - len;
       v->offset = v->offset + len;
-      p->unused = v->start;
+      //p->unused = v->start;
       
       if(v->len == 0){  
         // if the whole mapped region of the vma structure is removed

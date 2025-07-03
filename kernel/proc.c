@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
 
 struct cpu cpus[NCPU];
 
@@ -353,6 +354,47 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+
+  // Unmap the process's mapped regions as if munmap had been called
+  for(int i = 0; i < NVMA; i++){
+    if(p->mappedf[i]){
+      struct vma* v = p->mappedf[i];
+      if(v->ref == 0){
+        continue;
+      }
+     
+      // uvmunmap the mapped region page by page
+      uint64 addri = v->start;
+      int tot = 0;
+      while(tot < v->len){
+        // if the address is not mapped with memory and the relevent PTE,
+        // don't need to write back and uvmunmap 
+        pte_t* pte = walk(p->pagetable, addri, 0);
+        if(pte == 0 || (*pte & PTE_V) == 0){ 
+          ;
+        }else{
+          // If an unmapped page has been modified and 
+          // the file is mapped MAP_SHARED, write the page back to the file.
+          if(v->flags & MAP_SHARED){
+            filewrite(v->fl, addri, PGSIZE);
+          }
+
+          // remove mmap mappings in the indicated address range
+          // uvmunmap(p->pagetable, addr, len / PGSIZE, 1);
+          uvmunmap(p->pagetable, addri, 1, 1);
+        }
+
+        tot += PGSIZE;
+        addri += PGSIZE;
+      }
+      
+      // free vma structure
+      fileclose(v->fl);
+      vmafree(v);
+      p->mappedf[i] = 0;
+    }
+  }
+  p->unused = TRAPFRAME;
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
