@@ -287,6 +287,8 @@ freewalk(pagetable_t pagetable)
       freewalk((pagetable_t)child);
       pagetable[i] = 0;
     } else if(pte & PTE_V){
+      uint64 pa = PTE2PA(pte);
+      printf("freewalk: leaf %x %p pa: %lx\n", i, &pagetable[i], pa);
       panic("freewalk: leaf");
     }
   }

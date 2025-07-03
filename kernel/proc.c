@@ -173,6 +173,7 @@ freeproc(struct proc *p)
   p->killed = 0;
   p->xstate = 0;
   p->state = UNUSED;
+  p->unused = 0;
 }
 
 // Create a user page table for a given process, with no user memory,
@@ -389,7 +390,9 @@ exit(int status)
           // If an unmapped page has been modified and 
           // the file is mapped MAP_SHARED, write the page back to the file.
           if(v->flags & MAP_SHARED){
-            filewrite(v->fl, addri, PGSIZE);
+
+            //filewrite(v->fl, addri, PGSIZE);
+            mappedfilewrite(v->fl, addri, PGSIZE, tot + v->offset);
           }
 
           // remove mmap mappings in the indicated address range

@@ -79,6 +79,7 @@ vmafree(struct vma* v){
   v->fd = -1; // Clear the file descriptor
   v->offset = 0; // Clear the offset
   v->fl = 0; // Clear the file pointer
+  // v->tot = 0; // Clear the total length
   release(&vma_table.lock);
 }
 
@@ -94,6 +95,7 @@ vmacopy(struct vma* dest, struct vma* src){
   dest->offset = src->offset;
   dest->fl = src->fl;
   dest->ref = src->ref; // Copy the reference count
+  //dest->tot = src->tot; // Copy the total length
 }
 
 // Add a VMA to the process's table of mapped regions
@@ -266,3 +268,42 @@ filewrite(struct file *f, uint64 addr, int n)
   return ret;
 }
 
+// Write to a mapped file f.
+// addr is a user virtual address.
+int mappedfilewrite(struct file* f, uint64 addr, int n, int offset){
+  int r, ret = 0;
+
+  if(f->type == FD_INODE){
+    // write a few blocks at a time to avoid exceeding
+    // the maximum log transaction size, including
+    // i-node, indirect block, allocation blocks,
+    // and 2 blocks of slop for non-aligned writes.
+    // this really belongs lower down, since writei()
+    // might be writing a device like the console.
+    int max = ((MAXOPBLOCKS-1-1-2) / 2) * BSIZE;
+    int i = 0;
+    while(i < n){
+      int n1 = n - i;
+      if(n1 > max)
+        n1 = max;
+
+      begin_op();
+      ilock(f->ip);
+      if ((r = writei(f->ip, 1, addr + i, offset, n1)) > 0)
+        offset += r;
+      iunlock(f->ip);
+      end_op();
+
+      if(r != n1){
+        // error from writei
+        break;
+      }
+      i += r;
+    }
+    ret = (i == n ? n : -1);
+  }else {
+    panic("mappedfilewrite");
+  }
+
+  return ret;
+}

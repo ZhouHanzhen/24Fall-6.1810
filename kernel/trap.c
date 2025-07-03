@@ -70,6 +70,10 @@ usertrap(void)
 
     syscall();
   } else if(r_scause() == 13 || r_scause() == 15){    //  Load page fault or Store/AMO page fault
+    if(killed(p))
+      exit(-1);
+    intr_on();
+
     uint64 stval = r_stval();
     int flag = 0;
 
@@ -106,6 +110,11 @@ usertrap(void)
       // map the page into the user address space.  
       int perm = ((v->prot) << 1) | ((v->flags) << 8) | PTE_U;
       mappages(p->pagetable, stval, PGSIZE, (uint64)pa, perm);
+    }else{
+      // stval is not in a mmaped region
+      printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+      setkilled(p);
     }
   }else if((which_dev = devintr()) != 0){
     // ok

@@ -118,6 +118,7 @@ struct vma {
   int offset;
   struct file *fl;
   int ref; // reference count
+  //int tot;
 };
 
 

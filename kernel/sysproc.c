@@ -121,6 +121,7 @@ sys_mmap(void)
   vma->flags = flags;
   vma->fd = fd;
   vma->offset = offset;
+  // vma->tot = len;
 
   filedup(p->ofile[fd]);
   vma->fl = p->ofile[fd];
@@ -152,7 +153,7 @@ uint64
 sys_munmap(void)
 {
   uint64 addr, addri;
-  int len, tot;
+  int len, tot, off;
   argaddr(0, &addr);
   argint(1, &len);
 
@@ -171,6 +172,11 @@ sys_munmap(void)
       // uvmunmap the mapped region page by page
       addri = addr;
       tot = 0;
+      if(addr > v->start){
+        off = addr - v->start + v->offset;
+      }else{
+        off = v->offset;
+      }
       while(tot < len){ 
         // if the address is not mapped with memory and the relevent PTE,
         // don't need to write back and uvmunmap 
@@ -181,7 +187,8 @@ sys_munmap(void)
           // If an unmapped page has been modified and 
           // the file is mapped MAP_SHARED, write the page back to the file.
           if(v->flags & MAP_SHARED){
-            filewrite(v->fl, addri, PGSIZE);
+            // filewrite(v->fl, addri, PGSIZE);
+            mappedfilewrite(v->fl, addri, PGSIZE, off);
           }
 
           // remove mmap mappings in the indicated address range
@@ -191,15 +198,15 @@ sys_munmap(void)
 
         tot += PGSIZE;
         addri += PGSIZE;
+        off += PGSIZE;
       }
       
-      
       // update the vma structure 
-      v->start = addr + len;
-      v->len = v->len - len;
-      v->offset = v->offset + len;
-      //p->unused = v->start;
-      
+      v->len -= len;
+      if(addr == v->start){
+        v->start += len;  // update the start address of the vma structure
+        v->offset += len;
+      }
       if(v->len == 0){  
         // if the whole mapped region of the vma structure is removed
         // decrement the reference count of the corresponding struct file
