@@ -77,44 +77,54 @@ usertrap(void)
     uint64 stval = r_stval();
     int flag = 0;
 
-    // a page-fault in a mmap-ed region
-    struct vma* v;
-    for(int i = 0; i < NVMA; i++){
-      if(p->mappedf[i] == 0){
-        continue;
+    pte_t* pte = walk(p->pagetable, stval, 0);
+    if(pte && (*pte & PTE_V)){
+      int perm = PTE_FLAGS(*pte);
+      if(((perm & PTE_W) == 0)){  // read-only page fault
+        printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
+        printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+        setkilled(p);
       }
-      v = p->mappedf[i];
-      if(v->ref == 0){
-        continue; // vma not in use
-      }
-      if(stval >= v->start && stval < v->start + v->len){
-        // stval is in a mapped region 
-        flag = 1;
-        break;
-      }
-    }
-   
-    // stval is in a mmap-ed region.
-    if(flag){
-      // allocate a new page for the mmap.
-      char* pa = kalloc();
-      memset(pa, 0, sizeof(pa));
-
-      // read 4096 bytes of the relevant file into that page
-      struct inode *ip = v->fl->ip;
-      int off = stval - v->start + v->offset;
-      ilock(ip);
-      readi(ip, 0, (uint64)pa, off, PGSIZE);
-      iunlock(ip);
-
-      // map the page into the user address space.  
-      int perm = ((v->prot) << 1) | ((v->flags) << 8) | PTE_U;
-      mappages(p->pagetable, stval, PGSIZE, (uint64)pa, perm);
     }else{
-      // stval is not in a mmaped region
-      printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
-      printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
-      setkilled(p);
+      // a page-fault in a mmap-ed region
+      struct vma* v;
+      for(int i = 0; i < NVMA; i++){
+        if(p->mappedf[i] == 0){
+          continue;
+        }
+        v = p->mappedf[i];
+        if(v->ref == 0){
+          continue; // vma not in use
+        }
+        if(stval >= v->start && stval < v->start + v->len){
+          // stval is in a mapped region 
+          flag = 1;
+          break;
+        }
+      }
+    
+      // stval is in a mmap-ed region.
+      if(flag){
+        // allocate a new page for the mmap.
+        char* pa = kalloc();
+        memset(pa, 0, sizeof(pa));
+
+        // read 4096 bytes of the relevant file into that page
+        struct inode *ip = v->fl->ip;
+        int off = stval - v->start + v->offset;
+        ilock(ip);
+        readi(ip, 0, (uint64)pa, off, PGSIZE);
+        iunlock(ip);
+
+        // map the page into the user address space.  
+        int perm = ((v->prot) << 1) | ((v->flags) << 8) | PTE_U;
+        mappages(p->pagetable, stval, PGSIZE, (uint64)pa, perm);
+      }else{
+        // stval is not in a mmaped region
+        printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
+        printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), r_stval());
+        setkilled(p);
+      }
     }
   }else if((which_dev = devintr()) != 0){
     // ok
