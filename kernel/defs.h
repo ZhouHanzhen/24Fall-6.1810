@@ -36,6 +36,7 @@ struct file*    filedup(struct file*);
 void            fileinit(void);
 void            vmainit(void);
 struct vma*     vmaalloc(void);
+void            vmacopy(struct vma*, struct vma*);
 int             addvma(struct vma*);
 void            vmafree(struct vma*);
 int             fileread(struct file*, uint64, int n);

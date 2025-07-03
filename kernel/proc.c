@@ -312,6 +312,19 @@ fork(void)
       np->ofile[i] = filedup(p->ofile[i]);
   np->cwd = idup(p->cwd);
 
+  // the child should have the same mapped regions as the parent.
+  // copy the vma structures from parent to child.
+  // if the parent has mapped files, copy them to the child.
+  for(i = 0; i < NVMA; i++){
+    if(p->mappedf[i]){
+      struct vma* v = vmaalloc();
+      vmacopy(v, p->mappedf[i]);
+      np->mappedf[i] = v;
+      filedup(v->fl);
+    }
+  }
+  np->unused = p->unused;
+
   safestrcpy(np->name, p->name, sizeof(p->name));
 
   pid = np->pid;

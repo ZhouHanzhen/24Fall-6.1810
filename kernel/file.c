@@ -82,6 +82,20 @@ vmafree(struct vma* v){
   release(&vma_table.lock);
 }
 
+// Copy a vma structure to another vma structure.
+void
+vmacopy(struct vma* dest, struct vma* src){
+  dest->start = src->start;
+  dest->addr = src->addr;
+  dest->len = src->len;
+  dest->prot = src->prot;
+  dest->flags = src->flags;   
+  dest->fd = src->fd;
+  dest->offset = src->offset;
+  dest->fl = src->fl;
+  dest->ref = src->ref; // Copy the reference count
+}
+
 // Add a VMA to the process's table of mapped regions
 int addvma(struct vma* v){
   int i;
