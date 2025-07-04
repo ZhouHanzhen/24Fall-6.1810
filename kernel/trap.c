@@ -76,7 +76,13 @@ usertrap(void)
 
     uint64 stval = r_stval();
     int flag = 0;
-
+    if(stval >= MAXVA){
+      // stval is above the maximum user address.
+      printf("usertrap(): unexpected scause 0x%lx pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=0x%lx stval=0x%lx\n", r_sepc(), stval);
+      setkilled(p);
+      exit(-1);
+    }
     pte_t* pte = walk(p->pagetable, stval, 0);
     if(pte && (*pte & PTE_V)){
       int perm = PTE_FLAGS(*pte);
